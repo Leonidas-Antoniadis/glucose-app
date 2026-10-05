@@ -174,22 +174,35 @@ struct SelectionCallout: View {
     let stick: FingerstickEntry?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(unit.format(mgdL: reading.mgdL, includeSymbol: true))
-                .font(.callout.bold())
-                .foregroundStyle(RangeColor.color(for: reading.mgdL))
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                // The range color sits in a dot, so the value stays readable (yellow text on white isn't).
+                Circle()
+                    .fill(RangeColor.color(for: reading.mgdL))
+                    .frame(width: 8, height: 8)
+                Text(unit.format(mgdL: reading.mgdL, includeSymbol: true))
+                    .font(.callout.bold())
+                    .foregroundStyle(.primary)
+            }
             Text(reading.timestamp.formatted(.dateTime.weekday(.abbreviated).hour().minute()))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             if let stick {
-                Label("Fingerstick \(unit.format(mgdL: stick.mgdL))", systemImage: "drop.fill").font(.caption2)
+                Label("Fingerstick \(unit.format(mgdL: stick.mgdL))", systemImage: "drop.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.primary)
             }
             ForEach(notes) { note in
-                Label(note.title, systemImage: note.symbolName).font(.caption2)
+                Label(note.title, systemImage: note.symbolName)
+                    .font(.caption2)
+                    .foregroundStyle(.primary)
             }
         }
         .padding(8)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        // Solid card: the green target band and the line behind it don't show through.
+        .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(uiColor: .separator), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
     }
 }
 
