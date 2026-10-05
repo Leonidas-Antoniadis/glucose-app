@@ -41,7 +41,7 @@ enum QuickLogKind: String, CaseIterable, Identifiable {
     }
 }
 
-/// One-tap logging buttons for the home screen.
+/// Logbook buttons that open the full form. The home screen uses `HomeQuickLog`.
 struct QuickAddBar: View {
     let onSelect: (QuickLogKind) -> Void
 
@@ -52,12 +52,7 @@ struct QuickAddBar: View {
                     Button {
                         onSelect(kind)
                     } label: {
-                        Label(kind.title, systemImage: kind.symbolName)
-                            .font(.subheadline.weight(.medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(kind.tint.opacity(0.15), in: Capsule())
-                            .foregroundStyle(kind.tint)
+                        QuickLogChip(kind: kind)
                     }
                     .buttonStyle(.plain)
                 }

@@ -9,8 +9,10 @@ public struct LogEntry: Codable, Hashable, Identifiable, Sendable {
         case note
     }
 
-    public enum InsulinType: String, Codable, CaseIterable, Sendable {
+    public enum InsulinType: String, Codable, CaseIterable, Identifiable, Sendable {
         case rapid, long, other
+
+        public var id: String { rawValue }
 
         public var displayName: String {
             switch self {
@@ -69,8 +71,44 @@ public struct LogEntry: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
-    static func format(_ value: Double) -> String {
+    public static func format(_ value: Double) -> String {
         value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+    }
+}
+
+/// Shortcuts for logging from the home screen, learned from past entries.
+public enum QuickLog {
+    /// The newest insulin entry of a type.
+    public static func lastInsulin(_ type: LogEntry.InsulinType, in entries: [LogEntry]) -> (units: Double, date: Date)? {
+        doses(type, in: entries).max { $0.date < $1.date }
+    }
+
+    /// When the newest meal was.
+    public static func lastMeal(in entries: [LogEntry]) -> Date? {
+        entries.filter { if case .meal = $0.kind { return true } else { return false } }.map(\.date).max()
+    }
+
+    /// The doses of a type used most often in the last `days`, smallest first.
+    /// Ties go to the dose used most recently.
+    public static func usualDoses(_ type: LogEntry.InsulinType, in entries: [LogEntry], now: Date,
+                                  days: Double = 30, limit: Int = 5) -> [Double] {
+        let since = now.addingTimeInterval(-days * 86_400)
+        var stats: [Double: (count: Int, last: Date)] = [:]
+        for dose in doses(type, in: entries) where dose.date >= since && dose.date <= now {
+            let old = stats[dose.units]
+            stats[dose.units] = ((old?.count ?? 0) + 1, max(old?.last ?? .distantPast, dose.date))
+        }
+        let top = stats.sorted { a, b in
+            a.value.count != b.value.count ? a.value.count > b.value.count : a.value.last > b.value.last
+        }
+        return top.prefix(limit).map(\.key).sorted()
+    }
+
+    private static func doses(_ type: LogEntry.InsulinType, in entries: [LogEntry]) -> [(units: Double, date: Date)] {
+        entries.compactMap { entry in
+            if case .insulin(let units, let entryType) = entry.kind, entryType == type { return (units, entry.date) }
+            return nil
+        }
     }
 }
 

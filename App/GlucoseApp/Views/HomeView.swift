@@ -5,7 +5,7 @@ import LibreProtocol
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var hours: Double = 3
-    @State private var quickAdd: QuickLogKind?
+    @State private var logged: LoggedToast?
 
     var body: some View {
         NavigationStack {
@@ -13,7 +13,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     StatusBanners()
                     CurrentValueCard()
-                    QuickAddBar { quickAdd = $0 }
+                    HomeQuickLog(logged: $logged)
                     Picker("Chart window", selection: $hours) {
                         ForEach([3.0, 6, 12, 24], id: \.self) { Text("\(Int($0)) h").tag($0) }
                     }
@@ -25,8 +25,24 @@ struct HomeView: View {
                 }
                 .padding()
             }
+            .overlay(alignment: .bottom) {
+                if let logged {
+                    UndoToast(toast: logged) {
+                        model.deleteLogEntries(logged.entryIDs)
+                        withAnimation { self.logged = nil }
+                    }
+                    .padding()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .task(id: logged.id) {
+                        do {
+                            try await Task.sleep(for: .seconds(6))
+                            withAnimation { self.logged = nil }
+                        } catch {}
+                    }
+                }
+            }
+            .sensoryFeedback(.success, trigger: logged) { _, new in new != nil }
             .navigationTitle("Glucose")
-            .sheet(item: $quickAdd) { kind in AddLogEntryView(kind: kind) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {

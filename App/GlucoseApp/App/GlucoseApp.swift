@@ -135,6 +135,8 @@ struct ScreenshotScreen: View {
                     .navigationTitle("Battery and Lock Screen")
             case "add":
                 AddLogEntryView(kind: .fastInsulin)
+            case "quick":
+                QuickDoseSheet(type: .rapid) { _, _ in }
             default:
                 MainTabs()
             }
