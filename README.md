@@ -26,6 +26,11 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 | <img src="docs/screenshots/alerts.png" width="230" alt="Low and high alert rules"> | <img src="docs/screenshots/alert-editor.png" width="230" alt="Editing an alert rule"> | <img src="docs/screenshots/onboarding.png" width="230" alt="Onboarding with the not-a-medical-device notice"> |
 | 5 low + 5 high, separate low and high alarms | Sound, Critical Alert, repeat, snooze, schedule | Safety notice, units, presets, data source |
 
+| Battery and Lock Screen |
+|:---:|
+| <img src="docs/screenshots/battery-lock-screen.png" width="230" alt="Settings with Show Live Activity again, Run in background and 91 days of data kept"> |
+| Bring back the Live Activity, save battery, 91 days kept |
+
 | Sensor | Raw sensor data | Packet bytes | Sensor history |
 |:---:|:---:|:---:|:---:|
 | <img src="docs/screenshots/sensor.png" width="175" alt="Sensor status, pairing and calibration"> | <img src="docs/screenshots/raw-data.png" width="175" alt="List of Bluetooth packets and NFC reads"> | <img src="docs/screenshots/packet.png" width="175" alt="One packet's bytes, encrypted and decrypted, colored by meaning"> | <img src="docs/screenshots/sensor-history.png" width="175" alt="Last 5 sensors with serials and end reasons"> |

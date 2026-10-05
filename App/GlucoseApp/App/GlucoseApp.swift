@@ -133,6 +133,7 @@ struct ScreenshotScreen: View {
             case "battery":
                 Form { BatteryAndLockScreenSections() }
                     .navigationTitle("Battery and Lock Screen")
+                    .navigationBarTitleDisplayMode(.inline)
             case "add":
                 AddLogEntryView(kind: .fastInsulin)
             case "quick":
