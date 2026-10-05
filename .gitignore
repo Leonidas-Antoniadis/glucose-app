@@ -30,3 +30,10 @@ App/GlucoseApp/Info.plist
 App/GlucoseApp/GlucoseApp.entitlements
 App/GlucoseWidget/Info.plist
 App/GlucoseWidget/GlucoseWidget.entitlements
+
+# graphify: share the graph, keep machine-specific files and backups local
+graphify-out/.graphify_python
+graphify-out/cost.json
+graphify-out/20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]/
+graphify-out/.graphify_*.json
+!graphify-out/.graphify_labels.json
