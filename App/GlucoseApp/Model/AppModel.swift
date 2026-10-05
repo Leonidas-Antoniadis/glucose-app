@@ -19,6 +19,8 @@ final class AppModel {
     var isLocked = false
     /// Whether iOS lets alerts marked Critical sound through Silent mode and Focus.
     private(set) var criticalAlertsAllowed = false
+    /// Why alerts can't be seen or heard (notifications or their sounds turned off), if so.
+    private(set) var notificationProblem: String?
     let sensor: SensorConnection
 
     /// Readings kept in memory (enough for 14-day reports).
@@ -124,7 +126,7 @@ final class AppModel {
         started = true
         if !ScreenshotMode.isActive {
             await notifications.requestAuthorization()
-            criticalAlertsAllowed = notifications.criticalAllowed
+            await refreshNotificationStatus()
         }
         signatureExpiry = ProvisioningProfile.expirationDate()
         notifications.scheduleSignatureReminders(expiry: signatureExpiry)
@@ -281,6 +283,12 @@ final class AppModel {
         if recentEvents.count > 50 {
             recentEvents.removeLast(recentEvents.count - 50)
         }
+    }
+
+    func refreshNotificationStatus() async {
+        let status = await notifications.refreshCriticalStatus()
+        criticalAlertsAllowed = status.critical
+        notificationProblem = status.problem
     }
 
     func acknowledge(ruleID: UUID) {
@@ -453,7 +461,7 @@ final class AppModel {
             }
             if wasInactive, started, !ScreenshotMode.isActive {
                 // The user may be back from turning Critical Alerts on in iOS Settings.
-                Task { criticalAlertsAllowed = await notifications.refreshCriticalStatus() }
+                Task { await refreshNotificationStatus() }
             }
             if pausedInBackground {
                 pausedInBackground = false

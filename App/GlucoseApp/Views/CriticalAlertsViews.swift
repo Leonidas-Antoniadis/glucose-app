@@ -3,7 +3,7 @@ import UIKit
 import GlucoseCore
 
 /// Opens this app's page in iOS Settings → Notifications, where Critical Alerts are allowed.
-private func openNotificationSettings(_ openURL: OpenURLAction) {
+func openNotificationSettings(_ openURL: OpenURLAction) {
     if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
         openURL(url)
     }

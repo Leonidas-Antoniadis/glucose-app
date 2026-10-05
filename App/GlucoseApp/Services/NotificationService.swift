@@ -29,15 +29,32 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
         // Only takes effect once Apple grants the Critical Alerts entitlement; harmless otherwise.
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge, .criticalAlert])
-        await refreshCriticalStatus()
     }
 
-    /// Re-reads the Critical Alerts switch, which the user can change in iOS Settings at any time.
+    /// Re-reads the notification switches, which the user can change in iOS Settings at any time.
+    /// Returns whether Critical Alerts are allowed, and why alerts can't be heard, if they can't.
     @discardableResult
-    func refreshCriticalStatus() async -> Bool {
+    func refreshCriticalStatus() async -> (critical: Bool, problem: String?) {
         let settings = await center.notificationSettings()
         criticalAllowed = settings.criticalAlertSetting == .enabled
-        return criticalAllowed
+        let problem: String?
+        switch settings.authorizationStatus {
+        case .denied, .notDetermined:
+            problem = "Notifications are off for this app, so alerts can't show or sound."
+        default:
+            problem = settings.soundSetting == .disabled
+                ? "Notification sounds are off for this app, so alerts are silent."
+                : nil
+        }
+        return (criticalAllowed, problem)
+    }
+
+    /// Sends a rule's notification right away so its sound can be checked.
+    func sendTest(of rule: AlertRule, unit: GlucoseUnit) {
+        deliver(AlertEvent(ruleID: rule.id, ruleName: "Test: \(rule.name)", direction: rule.direction,
+                           valueMgdL: rule.thresholdMgdL, date: Date(), sound: rule.sound,
+                           isCritical: rule.isCritical, criticalVolume: rule.criticalVolume, kind: .initial),
+                unit: unit)
     }
 
     func deliver(_ event: AlertEvent, unit: GlucoseUnit) {

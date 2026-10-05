@@ -260,10 +260,23 @@ struct RuleEditorView: View {
                                    mgdL: $rule.thresholdMgdL,
                                    range: rule.direction == .low ? 40...180 : 100...AlertRuleSet.thresholdRangeMgdL.upperBound,
                                    unit: unit)
+                if rule.confirmationMinutes > 0 {
+                    Text("Waits until glucose has stayed past this for \(rule.confirmationMinutes) min. Change it under Timing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Sound") {
                 SoundPicker(sound: $rule.sound, direction: rule.direction)
+                if rule.sound == .silent {
+                    Text("Silent: shows a notification without any sound. Pick Tune or Voice to hear it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Send test alert", systemImage: "bell.badge") {
+                    model.notifications.sendTest(of: rule, unit: unit)
+                }
                 Toggle("Critical Alert (sounds through Silent and Focus)", isOn: $rule.isCritical)
                 if rule.isCritical {
                     Slider(value: $rule.criticalVolume, in: 0.1...1) { Text("Volume") }

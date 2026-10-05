@@ -62,11 +62,16 @@ struct HomeView: View {
 struct StatusBanners: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(spacing: 8) {
             if model.isDemo {
                 Banner(systemImage: "play.circle", text: "Demo data. Pair a sensor in Settings → Data source.", color: .blue)
+            }
+            if let problem = model.notificationProblem {
+                ActionBanner(systemImage: "bell.slash.fill", text: problem, color: .red,
+                             actions: [("Open Settings", { openNotificationSettings(openURL) })])
             }
             if let expiry = model.signatureExpiry, expiry.timeIntervalSinceNow < 2 * 86_400 {
                 Banner(systemImage: "clock.badge.exclamationmark",
