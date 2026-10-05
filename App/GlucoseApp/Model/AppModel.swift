@@ -17,6 +17,8 @@ final class AppModel {
     private(set) var signatureExpiry: Date?
     var lastError: String?
     var isLocked = false
+    /// Whether iOS lets alerts marked Critical sound through Silent mode and Focus.
+    private(set) var criticalAlertsAllowed = false
     let sensor: SensorConnection
 
     /// Readings kept in memory (enough for 14-day reports).
@@ -122,6 +124,7 @@ final class AppModel {
         started = true
         if !ScreenshotMode.isActive {
             await notifications.requestAuthorization()
+            criticalAlertsAllowed = notifications.criticalAllowed
         }
         signatureExpiry = ProvisioningProfile.expirationDate()
         notifications.scheduleSignatureReminders(expiry: signatureExpiry)
@@ -447,6 +450,10 @@ final class AppModel {
             isActive = true
             if wasInactive, settings.biometricLock, isLocked {
                 Task { await unlock() }
+            }
+            if wasInactive, started, !ScreenshotMode.isActive {
+                // The user may be back from turning Critical Alerts on in iOS Settings.
+                Task { criticalAlertsAllowed = await notifications.refreshCriticalStatus() }
             }
             if pausedInBackground {
                 pausedInBackground = false

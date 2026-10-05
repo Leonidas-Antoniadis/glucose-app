@@ -21,6 +21,8 @@ struct GlucoseChart: View {
     let unit: GlucoseUnit
     var entries: [LogEntry] = []
     var fingersticks: [FingerstickEntry] = []
+    /// Alert thresholds drawn as dashed lines.
+    var alertLines: [AlertRule] = []
     /// Width of the visible window.
     var visibleHours: Double = 3
 
@@ -45,6 +47,12 @@ struct GlucoseChart: View {
                         yEnd: .value("Target high", unit.fromMgdL(180))
                     )
                     .foregroundStyle(.green.opacity(0.12))
+
+                    ForEach(alertLines.filter { (40...maxValue).contains($0.thresholdMgdL) }) { rule in
+                        RuleMark(y: .value("Alert", unit.fromMgdL(rule.thresholdMgdL)))
+                            .foregroundStyle(rule.direction == .low ? Color.red : Color.orange)
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+                    }
 
                     ForEach(readings) { reading in
                         LineMark(
@@ -234,6 +242,33 @@ struct Banner: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
             .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// A glucose value chosen from a menu in 5 mg/dL steps.
+struct GlucoseValuePicker: View {
+    let title: String
+    @Binding var mgdL: Double
+    let range: ClosedRange<Double>
+    let unit: GlucoseUnit
+
+    var body: some View {
+        Picker(title, selection: $mgdL) {
+            ForEach(options, id: \.self) { value in
+                Text(unit.format(mgdL: value, includeSymbol: true)).tag(value)
+            }
+        }
+        .pickerStyle(.menu)
+    }
+
+    /// Every 5 mg/dL in the range, plus the current value if it isn't on a step.
+    private var options: [Double] {
+        var values = Array(stride(from: (range.lowerBound / 5).rounded(.up) * 5, through: range.upperBound, by: 5))
+        if !values.contains(mgdL) {
+            values.append(mgdL)
+            values.sort()
+        }
+        return values
     }
 }
 

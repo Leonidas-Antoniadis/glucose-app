@@ -256,9 +256,10 @@ struct RuleEditorView: View {
             Section {
                 TextField("Name", text: $rule.name)
                 Toggle("On", isOn: $rule.isEnabled)
-                Stepper(value: $rule.thresholdMgdL, in: AlertRuleSet.thresholdRangeMgdL, step: unit.editorStepMgdL) {
-                    Text("\(rule.direction == .low ? "Below" : "Above") \(unit.format(mgdL: rule.thresholdMgdL, includeSymbol: true))")
-                }
+                GlucoseValuePicker(title: rule.direction == .low ? "Alert below" : "Alert above",
+                                   mgdL: $rule.thresholdMgdL,
+                                   range: rule.direction == .low ? 40...180 : 100...AlertRuleSet.thresholdRangeMgdL.upperBound,
+                                   unit: unit)
             }
 
             Section("Sound") {
@@ -266,11 +267,7 @@ struct RuleEditorView: View {
                 Toggle("Critical Alert (sounds through Silent and Focus)", isOn: $rule.isCritical)
                 if rule.isCritical {
                     Slider(value: $rule.criticalVolume, in: 0.1...1) { Text("Volume") }
-                    Text(model.notifications.criticalAllowed
-                         ? "Critical Alerts are allowed on this phone."
-                         : "Needs Apple's Critical Alerts entitlement. Until then this is sent as Time Sensitive.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    CriticalAlertsStatus()
                 }
             }
 
@@ -361,10 +358,9 @@ struct TrendAlertEditorView: View {
                 Toggle("On", isOn: $alert.isEnabled)
                 switch alert.kind {
                 case .predictiveLow(let threshold, let minutes):
-                    Stepper(value: Binding(get: { threshold }, set: { alert.kind = .predictiveLow(thresholdMgdL: $0, minutesAhead: minutes) }),
-                            in: 50...120, step: unit.editorStepMgdL) {
-                        Text("Below \(unit.format(mgdL: threshold, includeSymbol: true))")
-                    }
+                    GlucoseValuePicker(title: "Below",
+                                       mgdL: Binding(get: { threshold }, set: { alert.kind = .predictiveLow(thresholdMgdL: $0, minutesAhead: minutes) }),
+                                       range: 50...120, unit: unit)
                     Stepper(value: Binding(get: { minutes }, set: { alert.kind = .predictiveLow(thresholdMgdL: threshold, minutesAhead: $0) }),
                             in: 10...40, step: 5) {
                         Text("Within \(minutes) min")
@@ -382,6 +378,9 @@ struct TrendAlertEditorView: View {
             Section("Sound") {
                 SoundPicker(sound: $alert.sound, direction: alert.kind.direction)
                 Toggle("Critical Alert", isOn: $alert.isCritical)
+                if alert.isCritical {
+                    CriticalAlertsStatus()
+                }
                 Stepper(value: $alert.snoozeMinutes, in: 5...240, step: 5) {
                     Text("Snooze \(alert.snoozeMinutes) min")
                 }

@@ -19,8 +19,11 @@ struct HomeView: View {
                     }
                     .pickerStyle(.segmented)
                     GlucoseChart(readings: model.chartReadings, unit: model.unit, entries: model.logbook,
-                                 fingersticks: model.fingersticks, visibleHours: hours)
+                                 fingersticks: model.fingersticks,
+                                 alertLines: model.settings.ruleSet.rules.filter { $0.isEnabled && $0.isCritical },
+                                 visibleHours: hours)
                         .frame(height: 300)
+                    CriticalAlertsCard()
                     RecentAlertsList()
                 }
                 .padding()

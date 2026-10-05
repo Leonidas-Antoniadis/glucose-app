@@ -29,8 +29,15 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
         // Only takes effect once Apple grants the Critical Alerts entitlement; harmless otherwise.
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge, .criticalAlert])
+        await refreshCriticalStatus()
+    }
+
+    /// Re-reads the Critical Alerts switch, which the user can change in iOS Settings at any time.
+    @discardableResult
+    func refreshCriticalStatus() async -> Bool {
         let settings = await center.notificationSettings()
         criticalAllowed = settings.criticalAlertSetting == .enabled
+        return criticalAllowed
     }
 
     func deliver(_ event: AlertEvent, unit: GlucoseUnit) {

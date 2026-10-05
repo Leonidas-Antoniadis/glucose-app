@@ -28,7 +28,7 @@ struct HomeQuickLog: View {
                     }
                 }
             }
-            LastLoggedLine()
+            LastLoggedTiles()
         }
         .sheet(item: $doseSheet) { type in
             QuickDoseSheet(type: type) { entries, message in log(entries, message) }
@@ -84,27 +84,53 @@ struct QuickLogChip: View {
     }
 }
 
-/// "Last fast insulin 4 U · 1h 20m ago", so a dose isn't taken twice by mistake.
-struct LastLoggedLine: View {
+/// When you last took fast insulin, ate and took slow insulin, with the clock time,
+/// so a dose isn't taken twice by mistake.
+struct LastLoggedTiles: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         TimelineView(.everyMinute) { context in
-            let cutoff = context.date.addingTimeInterval(-12 * 3600)
-            let insulin = QuickLog.lastInsulin(.rapid, in: model.logbook)
-            let meal = QuickLog.lastMeal(in: model.logbook)
-            VStack(alignment: .leading, spacing: 2) {
-                if let insulin, insulin.date > cutoff {
-                    Label("Last fast insulin \(LogEntry.format(insulin.units)) U · \(Self.ago(insulin.date, now: context.date))",
-                          systemImage: QuickLogKind.fastInsulin.symbolName)
-                }
-                if let meal, meal > cutoff {
-                    Label("Ate \(Self.ago(meal, now: context.date))", systemImage: QuickLogKind.food.symbolName)
-                }
+            let fast = QuickLog.lastInsulin(.rapid, in: model.logbook)
+            let slow = QuickLog.lastInsulin(.long, in: model.logbook)
+            HStack(spacing: 8) {
+                tile(.fastInsulin, amount: fast.map { "\(LogEntry.format($0.units)) U" }, date: fast?.date, now: context.date)
+                tile(.food, amount: nil, date: QuickLog.lastMeal(in: model.logbook), now: context.date)
+                tile(.slowInsulin, amount: slow.map { "\(LogEntry.format($0.units)) U" }, date: slow?.date, now: context.date)
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
         }
+    }
+
+    private func tile(_ kind: QuickLogKind, amount: String?, date: Date?, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Label(kind.title, systemImage: kind.symbolName)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(kind.tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            if let date, now.timeIntervalSince(date) < 24 * 3600 {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(date.formatted(date: .omitted, time: .shortened))
+                        .font(.headline)
+                    if let amount {
+                        Text(amount).font(.subheadline).foregroundStyle(.secondary)
+                    }
+                }
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                Text(Self.ago(date, now: now))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("–").font(.headline)
+                Text("none in 24 h").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(kind.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 
     private static let formatter: DateComponentsFormatter = {
