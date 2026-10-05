@@ -70,6 +70,10 @@ Everything compiles in the cloud on GitHub Actions:
 2. **Core tests** run `swift test` on Linux.
 3. **iOS build** produces `GlucoseApp.ipa` (Actions → latest run → Artifacts) and a **screenshots** artifact with every screen, captured in the iOS Simulator.
 
+### Installing with TestFlight
+
+For family or anyone not near your computer, see [TESTFLIGHT.md](TESTFLIGHT.md). It needs the paid Apple Developer Program, and each build lasts 90 days.
+
 ### Installing on your iPhone from Windows
 
 1. Install [Sideloadly](https://sideloadly.io/). It needs the non-Microsoft-Store versions of iTunes and iCloud.
