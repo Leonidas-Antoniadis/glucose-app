@@ -87,6 +87,18 @@ struct GlucoseChart: View {
                     }
                 }
                 .chartYScale(domain: unit.fromMgdL(40)...topY)
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .hour, count: axisStrideHours)) { value in
+                        let date = value.as(Date.self)
+                        AxisGridLine()
+                        AxisTick()
+                        AxisValueLabel(collisionResolution: .greedy) {
+                            Text(date.map(axisLabel(for:)) ?? "")
+                                .font(.caption2)
+                                .fontWeight(date.map(isMidnight) == true ? .semibold : .regular)
+                        }
+                    }
+                }
                 .chartScrollableAxes(.horizontal)
                 .chartXVisibleDomain(length: visibleSeconds)
                 .chartScrollPosition(x: $scrollPosition)
@@ -111,6 +123,27 @@ struct GlucoseChart: View {
             }
         }
         .onChange(of: visibleHours) { jumpToNow(end: end) }
+    }
+
+    /// Hours between time labels, so a window always shows 3-4 short labels.
+    private var axisStrideHours: Int {
+        switch visibleHours {
+        case ...3: return 1
+        case ...6: return 2
+        case ...12: return 3
+        default: return 6
+        }
+    }
+
+    private func isMidnight(_ date: Date) -> Bool {
+        Calendar.current.component(.hour, from: date) == 0
+    }
+
+    /// "4:00 PM" (or "16:00"), and the day at midnight ("Tue 6") so days stay clear when scrolling back.
+    private func axisLabel(for date: Date) -> String {
+        isMidnight(date)
+            ? date.formatted(.dateTime.weekday(.abbreviated).day())
+            : date.formatted(date: .omitted, time: .shortened)
     }
 
     private func isScrolledBack(end: Date) -> Bool {
