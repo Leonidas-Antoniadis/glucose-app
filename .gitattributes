@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.png binary
+*.caf binary
+*.m4a binary
