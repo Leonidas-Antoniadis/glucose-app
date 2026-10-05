@@ -55,7 +55,7 @@ struct OnboardingView: View {
                         .pickerStyle(.segmented)
                         Text(model.settings.dataSource == .demo
                              ? "Start with the demo sensor to try alerts and reports. Switch to your Libre sensor in Settings when you're ready."
-                             : "After setup, open Sensor and tap \"Pair sensor\". Start the sensor with LibreLink first.")
+                             : "After setup, open Sensor. Tap \"Pair sensor\" for a sensor started with LibreLink, or \"Start a new sensor\" to start one here.")
                             .foregroundStyle(.secondary)
                     }
                     .tag(3)

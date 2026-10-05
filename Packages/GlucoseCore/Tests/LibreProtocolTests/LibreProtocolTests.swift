@@ -76,6 +76,27 @@ final class LibreProtocolTests: XCTestCase {
         XCTAssertNotEqual(first, second)
     }
 
+    func testActivateParametersAreShaped() throws {
+        let uid = LibreFixtures.uid
+        let activate = try Libre2Crypto.activateParameters(uid: uid)
+        XCTAssertEqual(activate.count, 5)
+        XCTAssertEqual(activate[0], 0x1B)
+        XCTAssertEqual(Array(activate.dropFirst()), Libre2Crypto.usefulFunction(uid: uid, x: 0x1B, y: 0x1B6A))
+        var other = uid
+        other[0] ^= 0xFF
+        XCTAssertNotEqual(activate, try Libre2Crypto.activateParameters(uid: other), "the code depends on the sensor")
+        XCTAssertThrowsError(try Libre2Crypto.activateParameters(uid: [1, 2, 3]))
+    }
+
+    func testStateFromHeaderIgnoresUnsetBody() throws {
+        var plain = LibreSimulator.framPlaintext(ageMinutes: 0, state: .notActivated) { _ in 0 }
+        plain[100] ^= 0xFF  // a never-started sensor's body may not have a valid checksum
+        XCTAssertThrowsError(try LibreFRAM(decrypted: plain))
+        XCTAssertEqual(try LibreFRAM.state(decrypted: plain), .notActivated)
+        plain[4] ^= 0x01
+        XCTAssertThrowsError(try LibreFRAM.state(decrypted: plain), "header checksum still checked")
+    }
+
     func testCryptoRejectsBadInput() {
         XCTAssertThrowsError(try Libre2Crypto.enableStreamingParameters(uid: [1, 2, 3], patchInfo: LibreFixtures.patchInfo))
         XCTAssertThrowsError(try Libre2Crypto.enableStreamingParameters(uid: LibreFixtures.uid, patchInfo: [1]))

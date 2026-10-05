@@ -95,6 +95,7 @@ For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.
 
 1. Start the sensor with LibreLink or the Abbott reader and let it warm up (60 min).
 2. In the app: Home → sensor icon → **Pair sensor (NFC)**. LibreLink's alarms stop for that sensor from now on.
+   - Or skip LibreLink: apply a new sensor, then tap **Start a new sensor (NFC)**. The app starts it and pairs it in one scan. This is experimental (not yet tried on a real sensor), starting can't be undone, and LibreLink may not give alarms for a sensor it didn't start. If you might want to switch back to LibreLink, start the sensor there instead.
 3. Add a **fingerstick** when glucose is steady, and at least once a day. Until then values are rough estimates (raw ÷ 8.5).
 4. Add some fingersticks *without* "Use to calibrate" to measure accuracy (MARD).
 

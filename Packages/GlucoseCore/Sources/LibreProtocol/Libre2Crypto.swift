@@ -17,6 +17,10 @@ public enum Libre2Crypto {
     public static let enableStreamingCommand: UInt8 = 0xA1
     public static let enableStreamingSubcommand: UInt8 = 0x1E
     public static let patchInfoCommand: UInt8 = 0xA1
+    public static let activateCommand: UInt8 = 0xA1
+    public static let activateSubcommand: UInt8 = 0x1B
+    /// Fixed value used to derive the activation code (and parts of the Bluetooth key).
+    static let activateSecret: UInt16 = 0x1B6A
 
     // MARK: Building blocks
 
@@ -106,6 +110,15 @@ public enum Libre2Crypto {
         return [enableStreamingSubcommand] + usefulFunction(uid: uid, x: UInt16(enableStreamingSubcommand), y: y)
     }
 
+    // MARK: NFC activate
+
+    /// Parameters for the NFC custom command 0xA1 that starts a new sensor (state "Not activated"
+    /// to "Warming up"): the sub-command byte followed by four derived bytes. Starting can't be undone.
+    public static func activateParameters(uid: [UInt8]) throws -> [UInt8] {
+        try validate(uid: uid)
+        return [activateSubcommand] + usefulFunction(uid: uid, x: UInt16(activateSubcommand), y: activateSecret)
+    }
+
     // MARK: BLE
 
     /// The 12-byte payload written to the sensor after each Bluetooth connection.
@@ -119,7 +132,7 @@ public enum Libre2Crypto {
             UInt8((time >> 16) & 0xFF), UInt8((time >> 24) & 0xFF),
         ]
 
-        let ad = usefulFunction(uid: uid, x: 0x1B, y: 0x1B6A)
+        let ad = usefulFunction(uid: uid, x: UInt16(activateSubcommand), y: activateSecret)
         let ed = usefulFunction(uid: uid, x: UInt16(enableStreamingSubcommand),
                                 y: UInt16(enableTime & 0xFFFF) ^ word(patchInfo[5], patchInfo[4]))
 
@@ -141,7 +154,7 @@ public enum Libre2Crypto {
 
     /// Bluetooth keystream for a packet, seeded by the packet's first two (plain) bytes.
     static func bleKeyStream(uid: [UInt8], seedLow: UInt8, seedHigh: UInt8, length: Int) -> [UInt8] {
-        let d = usefulFunction(uid: uid, x: 0x1B, y: 0x1B6A)
+        let d = usefulFunction(uid: uid, x: UInt16(activateSubcommand), y: activateSecret)
         let x = (word(d[1], d[0]) ^ word(d[3], d[2])) | 0x63
         let y = word(seedHigh, seedLow) ^ 0x63
         var keyWords = processCrypto(prepareVariables(uid: uid, x: x, y: y))

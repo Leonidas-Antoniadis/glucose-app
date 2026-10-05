@@ -48,6 +48,14 @@ public struct LibreFRAM: Sendable {
     /// Most recent first.
     public let history: [LibreRawReading]
 
+    /// The sensor state from the FRAM header alone. A sensor that was never started may not have
+    /// valid data in the rest of the FRAM yet, so this checks only the header's checksum.
+    public static func state(decrypted bytes: [UInt8]) throws -> State {
+        guard bytes.count >= 24 else { throw LibreProtocolError.invalidLength(expected: 24, actual: bytes.count) }
+        guard LibreCRC.hasValidCRCInFirstTwoBytes(Array(bytes[0..<24])) else { throw LibreProtocolError.invalidCRC("FRAM header") }
+        return State(rawValue: bytes[4]) ?? .unknown
+    }
+
     public init(decrypted bytes: [UInt8]) throws {
         guard bytes.count >= Self.size else {
             throw LibreProtocolError.invalidLength(expected: Self.size, actual: bytes.count)

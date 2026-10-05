@@ -6,6 +6,7 @@ struct SensorView: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
     @State private var confirmForget = false
+    @State private var confirmStart = false
     @State private var showingFingerstick = false
 
     var body: some View {
@@ -45,6 +46,12 @@ struct SensorView: View {
                     Label(sensor.record == nil ? "Pair sensor (NFC)" : "Pair a new sensor (NFC)", systemImage: "wave.3.right")
                 }
                 .disabled(sensor.isBusy)
+                Button {
+                    confirmStart = true
+                } label: {
+                    Label("Start a new sensor (NFC)", systemImage: "play.circle")
+                }
+                .disabled(sensor.isBusy)
                 if sensor.record != nil {
                     Button {
                         Task { await sensor.scanHistory() }
@@ -56,7 +63,7 @@ struct SensorView: View {
             } header: {
                 Text("Pairing")
             } footer: {
-                Text("Start a new sensor with LibreLink or the Abbott reader first and let it warm up. Then pair it here: this app takes over the Bluetooth connection, so LibreLink's alarms stop for this sensor. European Libre 2 and 2 Plus only.")
+                Text("Pair a sensor that's already running (started with LibreLink or the Abbott reader): this app takes over the Bluetooth connection, so LibreLink's alarms stop for this sensor. Or start a brand-new sensor here instead of in LibreLink. European Libre 2 and 2 Plus only.")
             }
 
             if let record = sensor.record {
@@ -114,6 +121,11 @@ struct SensorView: View {
             Button("Forget", role: .destructive) { sensor.forget() }
         } message: {
             Text("The app stops connecting to it. Readings already saved are kept.")
+        }
+        .confirmationDialog("Start a new sensor?", isPresented: $confirmStart, titleVisibility: .visible) {
+            Button("Start sensor") { Task { await sensor.startNewSensor() } }
+        } message: {
+            Text("Apply the sensor first, then hold your iPhone to it. Starting can't be undone and begins the sensor's wear time. Experimental: not yet tested on a real new sensor. LibreLink may not give alarms for a sensor it didn't start, so if you might switch back, start it with LibreLink instead. No readings during the 1-hour warm-up.")
         }
     }
 }

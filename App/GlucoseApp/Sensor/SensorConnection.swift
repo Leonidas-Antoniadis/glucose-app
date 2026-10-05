@@ -173,11 +173,24 @@ final class SensorConnection {
 
     /// Pairs with a running sensor: reads it, enables Bluetooth streaming, imports its history.
     func pair() async {
+        await connect(.pair)
+    }
+
+    /// Starts a new sensor (it can't be stopped again), then pairs it.
+    func startNewSensor() async {
+        await connect(.start)
+    }
+
+    private func connect(_ mode: LibreNFCReader.Mode) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
-            let scan = try await nfc.scan(enableStreaming: true, allowUnverified: allowUnverifiedTypes)
+            let scan = try await nfc.scan(mode, allowUnverified: allowUnverifiedTypes)
+            if let response = scan.activationResponse {
+                capture("NFC activate", response)
+                log("Started new sensor (response \(response.hexString))")
+            }
             if let response = scan.streamingResponse { capture("NFC enable", response) }
             let fram = try decodeAndLog(scan)
             guard fram.state == .active || fram.state == .warmingUp else {
@@ -191,7 +204,8 @@ final class SensorConnection {
             history.record(SensorHistoryEntry(
                 id: newRecord.uid.hexString, sensorType: newRecord.type.displayName, computedSerial: newRecord.serial,
                 uidHex: newRecord.uid.hexString, patchInfoHex: newRecord.patchInfo.hexString,
-                startedAt: newRecord.activatedAt, pairedAt: Date(), expectedEnd: newRecord.expiresAt
+                startedAt: newRecord.activatedAt, pairedAt: Date(), expectedEnd: newRecord.expiresAt,
+                note: scan.activationResponse != nil ? "Started in this app" : ""
             ), at: Date())
             saveHistory()
             log("Paired \(newRecord.type.displayName), serial \(newRecord.serial), age \(fram.ageMinutes) min")
@@ -218,7 +232,7 @@ final class SensorConnection {
         isBusy = true
         defer { isBusy = false }
         do {
-            let scan = try await nfc.scan(enableStreaming: false, allowUnverified: allowUnverifiedTypes)
+            let scan = try await nfc.scan(.read, allowUnverified: allowUnverifiedTypes)
             let fram = try decodeAndLog(scan)
             guard scan.uid == record.uid else {
                 throw LibreProtocolError.unsupportedSensor("this is a different sensor; pair it instead")
