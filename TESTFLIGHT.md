@@ -4,37 +4,40 @@ TestFlight installs the app over the internet. You don't need a computer, a cabl
 
 > **Not a medical device.** Use Glucose as a second display only. Confirm every value with an approved reader or fingerstick meter before any treatment decision, and keep that backup with you.
 
+> **Family only.** Share builds only with people on your own Apple Developer team (internal testers). Giving glucose software to others can bring medical-device rules into play, and external testing needs Apple's review, which an unofficial CGM app is unlikely to pass.
+
 ## For the tester
 
 ### 1. Accept the invitation
 
-You'll get one or two emails from Apple:
+You'll get two emails from Apple:
 
-1. **"You've been invited to join … on App Store Connect"** (only if you were added as an internal tester). Open it, tap **Accept invitation**, and sign in with your own Apple ID. If you don't get this email, skip this step.
+1. **"You've been invited to join … on App Store Connect"**. Open it, tap **Accept invitation**, and sign in with your own Apple ID.
 2. **"… has invited you to test Glucose"**. Open this one **on your iPhone**.
 
 ### 2. Install
 
 1. Install **TestFlight** from the App Store (it's free, made by Apple).
 2. In the invitation email, tap **View in TestFlight**, then **Accept** and **Install**.
-   - If you got a code instead of a link: open TestFlight → **Redeem** and type the code.
 3. Glucose appears on your home screen with the blue droplet icon.
 
 ### 3. First launch
 
-1. Allow **Notifications**. The low and high alerts can't sound without them.
-2. Allow **Bluetooth**. The app reads the sensor every minute over Bluetooth.
-3. Want to look around first? Turn on the **demo sensor**. It works without a sensor.
+1. Read the safety notice, choose your units and an alert preset.
+2. Allow **Notifications**. The low and high alerts can't sound without them.
+3. Want to look around first? Choose the **demo sensor**. It works without a sensor.
 
-### 4. Pair your Libre 2 / Libre 2 Plus sensor
+### 4. Pair your Libre 2 / Libre 2 Plus sensor (EU)
 
-1. Start the sensor with **LibreLink** or the Abbott reader, and wait for its 60-minute warm-up.
-2. In Glucose: **Home → sensor icon → Pair sensor (NFC)**, then hold the top of the iPhone against the sensor.
-   LibreLink stops giving alarms for that sensor from this point, so set up your alerts in Glucose straight away.
-3. Enter a **fingerstick** reading when your glucose is steady, and at least once a day. Until you do, values are rough estimates.
-4. Check **Alerts** and make sure at least one low alert is on.
+1. Start the sensor with **LibreLink** or the Abbott reader. You can pair during its 60-minute warm-up; you'll get a "Sensor ready" notification when it ends. A sensor that's already running needs no new warm-up.
+2. In Glucose: **Home → sensor icon → Pair sensor (NFC)**, then hold the top of the iPhone against the sensor. Allow **Bluetooth** when asked.
+   - The app first checks that it can read your sensor. If it can't, nothing changes and LibreLink keeps working.
+   - Once paired, LibreLink stops giving alarms for that sensor, so check your alerts in Glucose straight away.
+   - To go back to LibreLink, scan the sensor with LibreLink. Glucose then shows "No reading" with a **Pair again** button.
+3. Enter a **blood glucose** value (fingerstick) when your glucose is steady, and at least once a day. Until you do, values are rough estimates.
+4. Check **Alerts** and make sure at least one low alert at or below 60 mg/dL is on.
 
-Keep the app running in the background. Don't swipe it closed: iOS restarts it for the sensor, but alerts are most reliable when the app is still open in the background.
+**Don't swipe the app closed.** If you do, iOS won't relaunch it: readings and alerts stop until you open it again. Leaving it in the background is fine; iOS wakes it for each reading. After restarting the phone, open the app once.
 
 ### 5. Updates and expiry
 
@@ -46,34 +49,44 @@ Keep the app running in the background. Don't swipe it closed: iOS restarts it f
 
 | Problem | Fix |
 |---|---|
-| "The requested app is not available" | The build is still processing or under review. Try again in an hour. |
+| "The requested app is not available" | The build is still processing. Try again in 15 minutes. |
 | Invitation link opens a web page | Install TestFlight first, then tap the link again on the iPhone. |
 | No alerts | Settings → Notifications → Glucose → allow, and check that Focus modes aren't silencing it. |
-| Pairing fails | Wait until the warm-up is over, keep the phone still on the sensor for a few seconds, and try again. If it still fails, use **Sensor → Share raw sensor captures** and send the file privately. It contains your sensor's ID. |
+| "No reading since …" | Keep the phone within a few meters of the sensor. If LibreLink was used to scan the sensor, tap **Pair again**. Tap **Scan sensor** to fill the gap (the sensor keeps 8 hours). |
+| Pairing fails | Hold the phone still on the sensor for a few seconds and try again. If it keeps failing, open **Sensor → Raw sensor data**: the failed read is kept there. Tap **Prepare file to share** and send it privately. It contains your sensor's ID. |
 
 ## For the owner: publishing a build
 
-Do this once:
+The owner is whoever has the paid Apple Developer Program membership.
 
-1. [App Store Connect](https://appstoreconnect.apple.com) → **Apps → + → New App**. Platform iOS, any name, and the **same bundle ID the build is signed with**.
-2. **TestFlight** tab → add testers:
-   - **Internal** (recommended for family): first invite them under **Users and Access**, then add them to an internal group. Builds are available within minutes and don't need review.
-   - **External**: add them by email only. Apple reviews each build first, which usually takes about a day.
+### Once
 
-Then, for every release:
+1. [App Store Connect](https://appstoreconnect.apple.com) → **Apps → + → New App**. Platform iOS, any name, bundle ID **com.leonidasantoniadis.glucoseapp** (the first upload registers it if it isn't listed yet).
+   If that bundle ID is taken by another account, change both `PRODUCT_BUNDLE_IDENTIFIER` values and the app group in `App/project.yml`, keeping the widget's ID as the app's ID plus `.widget`.
+2. **Users and Access** → invite each family member with their own Apple ID.
+3. **TestFlight** tab → create an **internal** group and add them. Internal builds are available within minutes and don't need Apple's review.
 
-1. Raise `CURRENT_PROJECT_VERSION` in `App/project.yml`. Every upload needs a new build number.
-2. Archive and upload from a Mac:
+### Every release, from a Mac
+
+1. Install Xcode and sign in under **Xcode → Settings → Accounts** with the developer account.
+2. In a terminal, in this repository:
    ```bash
-   xcodegen generate --spec App/project.yml
-   cd App
-   xcodebuild -project GlucoseApp.xcodeproj -scheme GlucoseApp -configuration Release \
-     -destination 'generic/platform=iOS' -archivePath ../build/GlucoseApp.xcarchive \
-     -allowProvisioningUpdates DEVELOPMENT_TEAM=<team-id> archive
-   xcodebuild -exportArchive -archivePath ../build/GlucoseApp.xcarchive \
-     -exportPath ../build/export -exportOptionsPlist ExportOptions.plist -allowProvisioningUpdates
+   git pull
+   ./tools/testflight-upload.sh YOUR_TEAM_ID
    ```
-   `ExportOptions.plist` needs `method` = `app-store-connect`, `destination` = `upload` and your `teamID`. You can also use Xcode → Product → Archive → **Distribute App → TestFlight & App Store**.
-3. When processing finishes (5–15 minutes), the build appears under TestFlight and testers are notified.
+   Your Team ID is on [developer.apple.com/account](https://developer.apple.com/account) → **Membership**. The script installs XcodeGen if needed, gives the build a new number automatically, archives with automatic signing (it registers NFC, notifications and the app group for you), and uploads.
+3. When processing finishes (5-15 minutes), the build appears under TestFlight and testers are notified.
+
+### Every release, without a Mac (optional)
+
+The **TestFlight upload** workflow does the same from GitHub. Add these repository secrets once (Settings → Secrets and variables → Actions):
+
+| Secret | Where to find it |
+|---|---|
+| `APPLE_TEAM_ID` | developer.apple.com/account → Membership |
+| `ASC_KEY_ID`, `ASC_ISSUER_ID` | App Store Connect → Users and Access → Integrations → App Store Connect API → create a key with the **Admin** role |
+| `ASC_KEY_P8` | The contents of the downloaded `.p8` file (it can only be downloaded once) |
+
+Then: **Actions → TestFlight upload → Run workflow**.
 
 Export compliance is already answered in the app (`ITSAppUsesNonExemptEncryption = NO`), so builds don't wait on that question.

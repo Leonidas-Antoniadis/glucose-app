@@ -2,7 +2,7 @@
 
 A personal, **local-only** iPhone app for the FreeStyle Libre 2 and Libre 2 Plus (EU) sensors. It reads glucose directly over Bluetooth and shows live values, trends, fully customizable alerts and statistics. Nothing is sent to any cloud.
 
-> **Not a medical device.** This is a personal project without regulatory clearance. Use it as a secondary display. Always confirm with an approved device before any treatment decision, and keep a backup (reader or fingerstick meter). Don't distribute builds to other people.
+> **Not a medical device.** This is a personal project without regulatory clearance. Use it as a secondary display. Always confirm with an approved device before any treatment decision, and keep a backup (reader or fingerstick meter). Share builds only with family on your own Apple Developer team (TestFlight internal testers), not with anyone else.
 
 ![Core tests](https://github.com/Leonidas-Antoniadis/glucose-app/actions/workflows/core-tests.yml/badge.svg)
 ![iOS build](https://github.com/Leonidas-Antoniadis/glucose-app/actions/workflows/ios-build.yml/badge.svg)
@@ -72,7 +72,7 @@ Everything compiles in the cloud on GitHub Actions:
 
 ### Installing with TestFlight
 
-For family or anyone not near your computer, see [TESTFLIGHT.md](TESTFLIGHT.md). It needs the paid Apple Developer Program, and each build lasts 90 days.
+For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.md): one script uploads from a Mac, or a GitHub workflow uploads without one. It needs the paid Apple Developer Program, and each build lasts 90 days.
 
 ### Installing on your iPhone from Windows
 

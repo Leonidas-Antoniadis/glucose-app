@@ -178,7 +178,7 @@ final class AppModel {
         guard let end = readings.last?.timestamp else { return }
         func ago(_ minutes: Double) -> Date { end.addingTimeInterval(-minutes * 60) }
         sensor.seedSampleHistory(now: end)
-        if let packet = sensor.packets.first {
+        if sensor.saved.isEmpty, let packet = sensor.packets.first {
             sensor.keep(packet, reason: "Saved by you (example)")
         }
         logbook = [
