@@ -525,6 +525,12 @@ final class SensorConnection {
         saved.contains { $0.bytes == bytes && $0.date == date }
     }
 
+    func deleteSaved(olderThan cutoff: Date) {
+        guard saved.contains(where: { $0.date < cutoff }) else { return }
+        saved.removeAll { $0.date < cutoff }
+        try? stores.savedCaptures.save(saved)
+    }
+
     func deleteSaved(_ ids: Set<UUID>) {
         saved.removeAll { ids.contains($0.id) }
         try? stores.savedCaptures.save(saved)

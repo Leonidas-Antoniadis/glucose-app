@@ -47,12 +47,14 @@ struct AppSettings: Codable, Hashable {
     var allowUnverifiedSensorTypes = false
     /// Write every packet to the capture log (normally only packets you save are kept).
     var recordAllRawData = false
+    /// Keep the sensor connection (and alerts) running while the app is closed. Off saves battery.
+    var runInBackground = true
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case unit, ruleSet, missingData, dataSource, demoSpeed, onboardingDone, biometricLock
-        case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData
+        case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData, runInBackground
     }
 
     init(from decoder: Decoder) throws {
@@ -71,5 +73,6 @@ struct AppSettings: Codable, Hashable {
         bluetoothAlert = try c.decodeIfPresent(Bool.self, forKey: .bluetoothAlert) ?? d.bluetoothAlert
         allowUnverifiedSensorTypes = try c.decodeIfPresent(Bool.self, forKey: .allowUnverifiedSensorTypes) ?? d.allowUnverifiedSensorTypes
         recordAllRawData = try c.decodeIfPresent(Bool.self, forKey: .recordAllRawData) ?? d.recordAllRawData
+        runInBackground = try c.decodeIfPresent(Bool.self, forKey: .runInBackground) ?? d.runInBackground
     }
 }

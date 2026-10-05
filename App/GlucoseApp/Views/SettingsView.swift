@@ -51,9 +51,7 @@ struct SettingsView: View {
                     Text("Imported tunes can be chosen in any alert. iOS plays up to 30 seconds.")
                 }
 
-                Section("Lock screen") {
-                    Toggle("Live Activity", isOn: $model.settings.liveActivity)
-                }
+                BatteryAndLockScreenSections()
 
                 Section("Privacy") {
                     Toggle("Lock with Face ID", isOn: $model.settings.biometricLock)
@@ -163,6 +161,46 @@ struct BackupView: View {
         }
         .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
             Button("OK") { message = nil }
+        }
+    }
+}
+
+/// Background running, Lock Screen Live Activity and how long data is kept.
+struct BatteryAndLockScreenSections: View {
+    @Environment(AppModel.self) private var model
+    @State private var message: String?
+
+    var body: some View {
+        @Bindable var model = model
+        Section {
+            Toggle("Live Activity", isOn: $model.settings.liveActivity)
+            Button("Show Live Activity again", systemImage: "rectangle.badge.plus") {
+                message = model.restartLiveActivity() ?? "The Live Activity is back on the Lock Screen."
+            }
+        } header: {
+            Text("Lock screen")
+        } footer: {
+            Text("If you swiped the glucose value off the Lock Screen, tap Show Live Activity again.")
+        }
+        .alert(message ?? "", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {
+            Button("OK") { message = nil }
+        }
+
+        Section {
+            Toggle("Run in background", isOn: $model.settings.runInBackground)
+        } header: {
+            Text("Battery")
+        } footer: {
+            Text(model.settings.runInBackground
+                 ? "The app stays connected to the sensor while closed, so alerts work at any time."
+                 : "Saves battery: the sensor connection stops when you leave the app and resumes when you open it. No glucose alerts and no Live Activity while the app is closed.")
+                .foregroundStyle(model.settings.runInBackground ? Color.secondary : Color.orange)
+        }
+
+        Section {
+            MetricRow(label: "Data kept on this phone", value: "\(Int(AppModel.archiveDays)) days")
+        } footer: {
+            Text("Readings, notes, fingersticks and raw captures older than \(Int(AppModel.archiveDays)) days are deleted automatically.")
         }
     }
 }

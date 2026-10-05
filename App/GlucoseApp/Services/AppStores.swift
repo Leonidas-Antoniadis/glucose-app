@@ -56,6 +56,21 @@ struct AppStores {
         }
     }
 
+    /// Drops capture log lines older than `cutoff`. Each line starts with an ISO 8601 UTC time,
+    /// so comparing the text compares the dates.
+    func pruneCaptures(olderThan cutoff: Date) {
+        guard let text = try? String(contentsOf: capturesURL, encoding: .utf8) else { return }
+        let oldest = ISO8601DateFormatter().string(from: cutoff)
+        let lines = text.split(separator: "\n")
+        let kept = lines.filter { String($0.prefix(oldest.count)) >= oldest }
+        guard kept.count < lines.count else { return }
+        if kept.isEmpty {
+            try? FileManager.default.removeItem(at: capturesURL)
+        } else {
+            try? Data((kept.joined(separator: "\n") + "\n").utf8).write(to: capturesURL, options: .atomic)
+        }
+    }
+
     func deleteEverything() {
         try? archive?.removeAll()
         sensor.delete()

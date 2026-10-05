@@ -47,6 +47,21 @@ final class SurfaceUpdater {
         }
     }
 
+    var liveActivitiesAllowed: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
+
+    /// Ends any current Live Activity and starts a fresh one. Only works while the app is in the foreground.
+    func restartLiveActivity(latest: GlucoseReading, arrow: TrendArrow, unit: GlucoseUnit) {
+        let state = GlucoseActivityAttributes.ContentState(
+            mgdL: latest.mgdL, arrow: arrow.symbol, timestamp: latest.timestamp, unitRaw: unit.rawValue)
+        let old = Activity<GlucoseActivityAttributes>.activities
+        activity = try? Activity.request(attributes: GlucoseActivityAttributes(),
+                                         content: ActivityContent(state: state, staleDate: Date().addingTimeInterval(10 * 60)),
+                                         pushType: nil)
+        for current in old {
+            Task { await current.end(nil, dismissalPolicy: .immediate) }
+        }
+    }
+
     func endLiveActivity() {
         for current in Activity<GlucoseActivityAttributes>.activities {
             Task { await current.end(nil, dismissalPolicy: .immediate) }

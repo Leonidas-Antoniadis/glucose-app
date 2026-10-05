@@ -43,8 +43,9 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 | Sounds | Separate low and high alarms (including ultra loud, high-pitched ones), chime, pulse, 9 voice clips, import your own tunes |
 | Reports | 1-90 days: time in ranges with consensus targets, mean, GMI, SD, CV, day/night, AGP, daily overlay, PDF and CSV export |
 | Logbook | Meals, insulin, exercise and notes, shown as chart markers |
-| Privacy | All data on the phone, excluded from iCloud backup, optional Face ID lock, password-encrypted backup file |
-| Surfaces | Home-screen and lock-screen widgets, Live Activity with Dynamic Island |
+| Privacy | All data on the phone, excluded from iCloud backup, kept for 91 days then deleted, optional Face ID lock, password-encrypted backup file |
+| Battery | "Run in background" switch: off stops the sensor connection while the app is closed (no alerts then) and resumes when you open it |
+| Surfaces | Home-screen and lock-screen widgets, Live Activity with Dynamic Island, button to bring the Live Activity back after swiping it away |
 | Demo | A simulated sensor (real time or 60x) to try everything without a sensor |
 
 ## Repository layout

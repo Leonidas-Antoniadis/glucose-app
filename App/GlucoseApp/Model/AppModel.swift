@@ -21,8 +21,8 @@ final class AppModel {
 
     /// Readings kept in memory (enough for 14-day reports).
     static let memoryDays: Double = 14
-    /// Readings kept on disk.
-    static let archiveDays: Double = 365
+    /// Readings, notes, fingersticks and raw captures kept on the phone. Older data is deleted.
+    static let archiveDays: Double = 91
 
     @ObservationIgnored private var engine: AlertEngine
     @ObservationIgnored let stores: AppStores
@@ -37,6 +37,9 @@ final class AppModel {
     @ObservationIgnored private var batteryAlerted = false
     @ObservationIgnored private var isActive = true
     @ObservationIgnored private var batteryObserver: NSObjectProtocol?
+    @ObservationIgnored private var lastPrune = Date.distantPast
+    /// True while the sensor connection is stopped because the app is closed and "Run in background" is off.
+    private(set) var pausedInBackground = false
 
     init() {
         let stores = AppStores()
@@ -128,7 +131,7 @@ final class AppModel {
             await unlock()
         }
         activateSource()
-        try? stores.archive?.prune(olderThan: Date().addingTimeInterval(-Self.archiveDays * 86_400))
+        pruneOldData()
     }
 
     func activateSource() {
@@ -240,6 +243,9 @@ final class AppModel {
                 try stores.archive?.append(fresh)
             } catch {
                 lastError = "Couldn't save readings: \(error.localizedDescription)"
+            }
+            if Date().timeIntervalSince(lastPrune) > 86_400 {
+                pruneOldData()
             }
         }
 
@@ -400,6 +406,38 @@ final class AppModel {
         AccuracyReport(fingersticks: fingersticks, readings: readings)
     }
 
+    /// Deletes readings, notes, fingersticks and raw captures older than `archiveDays`.
+    /// Runs at launch and then once a day while readings arrive.
+    func pruneOldData() {
+        lastPrune = Date()
+        let cutoff = Date().addingTimeInterval(-Self.archiveDays * 86_400)
+        try? stores.archive?.prune(olderThan: cutoff)
+        if logbook.contains(where: { $0.date < cutoff }) {
+            logbook.removeAll { $0.date < cutoff }
+            try? stores.logbook.save(logbook)
+        }
+        if fingersticks.contains(where: { $0.date < cutoff }) {
+            fingersticks.removeAll { $0.date < cutoff }
+            try? stores.fingersticks.save(fingersticks)
+        }
+        sensor.deleteSaved(olderThan: cutoff)
+        stores.pruneCaptures(olderThan: cutoff)
+    }
+
+    // MARK: Live Activity
+
+    /// Starts the Live Activity again, e.g. after it was swiped away from the Lock Screen.
+    /// Returns a message to show when it can't.
+    func restartLiveActivity() -> String? {
+        guard surfaces.liveActivitiesAllowed else {
+            return "Live Activities are turned off for this app. Turn them on in iOS Settings > Glucose > Live Activities."
+        }
+        settings.liveActivity = true
+        guard let latest = readings.last else { return "There is no glucose reading to show yet." }
+        surfaces.restartLiveActivity(latest: latest, arrow: trendArrow, unit: unit)
+        return nil
+    }
+
     // MARK: Lifecycle
 
     func scenePhaseChanged(_ phase: ScenePhase) {
@@ -410,9 +448,20 @@ final class AppModel {
             if wasInactive, settings.biometricLock, isLocked {
                 Task { await unlock() }
             }
+            if pausedInBackground {
+                pausedInBackground = false
+                if !isDemo { sensor.start() }
+            }
         case .background:
             isActive = false
             if settings.biometricLock { isLocked = true }
+            if !settings.runInBackground, started, !isDemo {
+                // Saves battery: no Bluetooth while closed, so no alerts and no stale Lock Screen value.
+                pausedInBackground = true
+                sensor.stop()
+                notifications.cancelMissingData()
+                surfaces.endLiveActivity()
+            }
         default:
             break
         }
