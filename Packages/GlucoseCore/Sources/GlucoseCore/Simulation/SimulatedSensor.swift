@@ -8,7 +8,7 @@ public struct SimulatedSensor: Sendable {
     /// Baseline the curve oscillates around.
     public var baselineMgdL: Double = 130
     /// Main swing (meals / daily rhythm).
-    public var amplitudeMgdL: Double = 70
+    public var amplitudeMgdL: Double = 60
     /// Period of the main swing in minutes.
     public var periodMinutes: Double = 240
     /// Small "noise" wobble.

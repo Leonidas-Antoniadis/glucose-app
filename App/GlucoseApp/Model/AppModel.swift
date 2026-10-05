@@ -50,7 +50,7 @@ final class AppModel {
         self.savedSettings = settings
         self.engine = AlertEngine(ruleSet: settings.ruleSet)
         let now = Date()
-        self.demoSensor = SimulatedSensor(startedAt: Date(timeIntervalSince1970: (now.timeIntervalSince1970 / 60).rounded(.down) * 60 - 2 * 86_400))
+        self.demoSensor = SimulatedSensor(startedAt: Date(timeIntervalSince1970: (now.timeIntervalSince1970 / 60).rounded(.down) * 60 - 15 * 86_400))
         self.sensor = SensorConnection(stores: stores)
         self.logbook = stores.logbook.load() ?? []
         self.fingersticks = stores.fingersticks.load() ?? []
@@ -136,7 +136,7 @@ final class AppModel {
 
     private func startDemo() {
         demoMinute = Int(Date().timeIntervalSince(demoSensor.startedAt) / 60)
-        readings = demoSensor.readings(minutes: max(0, demoMinute - 1440)..<demoMinute)
+        readings = demoSensor.readings(minutes: max(0, demoMinute - 14 * 1440)..<demoMinute)
         let speed = settings.demoSpeed
         demoTask = Task { [weak self] in
             while !Task.isCancelled {

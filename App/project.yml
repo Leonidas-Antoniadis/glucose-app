@@ -30,6 +30,7 @@ targets:
         product: GlucoseCore
       - package: GlucoseCore
         product: LibreProtocol
+      - target: GlucoseWidget
     scheme: {}
     settings:
       base:
@@ -44,6 +45,7 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIRequiresFullScreen: true
         UIBackgroundModes: [bluetooth-central]
         NSBluetoothAlwaysUsageDescription: Glucose connects to your Libre sensor over Bluetooth to receive readings every minute.
         NFCReaderUsageDescription: Glucose reads your Libre sensor over NFC to pair with it and to fetch its history.
@@ -56,4 +58,26 @@ targets:
       properties:
         com.apple.developer.nfc.readersession.formats: [TAG]
         com.apple.developer.usernotifications.time-sensitive: true
+        com.apple.security.application-groups: [group.com.leonidasantoniadis.glucoseapp]
+
+  GlucoseWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: GlucoseWidget
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.leonidasantoniadis.glucoseapp.widget
+    info:
+      path: GlucoseWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Glucose
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: GlucoseWidget/GlucoseWidget.entitlements
+      properties:
         com.apple.security.application-groups: [group.com.leonidasantoniadis.glucoseapp]
