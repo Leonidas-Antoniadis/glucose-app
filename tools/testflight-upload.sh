@@ -5,6 +5,7 @@
 #   ./tools/testflight-upload.sh <TEAM_ID>
 #
 # TEAM_ID is the 10-character Team ID from https://developer.apple.com/account → Membership.
+# BUNDLE_ID (optional) is the App Store Connect app's bundle ID; the widget gets the same plus .widget.
 # Each run gets a new build number (date and time), so nothing needs editing between uploads.
 set -euo pipefail
 
@@ -17,9 +18,14 @@ fi
 cd "$(dirname "$0")/.."
 BUILD_DIR="build/testflight"
 BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+BUNDLE_ID="${BUNDLE_ID:-com.ncatechsolutions.glucoseapp}"
 
 command -v xcodegen >/dev/null || { echo "Installing XcodeGen…"; brew install xcodegen; }
-xcodegen generate --spec App/project.yml
+# Build with the App Store Connect app's bundle IDs, leaving project.yml (and the app group) as is.
+SPEC="App/.project.testflight.yml"
+sed "s/PRODUCT_BUNDLE_IDENTIFIER: com.leonidasantoniadis.glucoseapp/PRODUCT_BUNDLE_IDENTIFIER: $BUNDLE_ID/" App/project.yml > "$SPEC"
+trap 'rm -f "$SPEC"' EXIT
+xcodegen generate --spec "$SPEC"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"

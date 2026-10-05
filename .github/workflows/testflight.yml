@@ -1,20 +1,40 @@
 name: TestFlight upload
 
-# Optional: upload to TestFlight from GitHub, without a Mac.
-# Runs only when started by hand (Actions → TestFlight upload → Run workflow) and needs these
-# repository secrets (Settings → Secrets and variables → Actions):
+# Uploads to TestFlight from GitHub, without a Mac. Runs on every push to main that changes
+# the app, and by hand (Actions → TestFlight upload → Run workflow). Testers in an internal
+# group with automatic distribution get each build a few minutes after processing.
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
 #   APPLE_TEAM_ID        10-character Team ID (developer.apple.com/account → Membership)
 #   ASC_KEY_ID           App Store Connect API key ID
 #   ASC_ISSUER_ID        App Store Connect issuer ID
-#   ASC_KEY_P8           Contents of the .p8 key file (Admin role, so Xcode can create signing certificates)
+#   ASC_KEY_P8           Contents of the .p8 key file (Admin role, for cloud distribution signing)
+#   BUILD_CERT_P12       Base64 of an Apple Development certificate + private key (.p12)
+#   BUILD_CERT_PASSWORD  Password of that .p12
 # Create the key at App Store Connect → Users and Access → Integrations → App Store Connect API.
+# A stored development certificate keeps Xcode from creating a new one on every run.
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "App/**"
+      - "Packages/**"
+      - ".github/workflows/testflight.yml"
   workflow_dispatch:
+
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+env:
+  # Bundle ID of the App Store Connect app. The app group stays as in project.yml.
+  BUNDLE_ID: com.ncatechsolutions.glucoseapp
 
 jobs:
   upload:
-    runs-on: macos-15
+    if: github.repository == 'Leonidas-Antoniadis/glucose-app'
+    runs-on: macos-26
     timeout-minutes: 45
     steps:
       - name: Check secrets
@@ -23,12 +43,16 @@ jobs:
           KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ISSUER: ${{ secrets.ASC_ISSUER_ID }}
           KEY: ${{ secrets.ASC_KEY_P8 }}
+          CERT: ${{ secrets.BUILD_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.BUILD_CERT_PASSWORD }}
         run: |
           missing=""
           [ -n "$TEAM" ] || missing="$missing APPLE_TEAM_ID"
           [ -n "$KEY_ID" ] || missing="$missing ASC_KEY_ID"
           [ -n "$ISSUER" ] || missing="$missing ASC_ISSUER_ID"
           [ -n "$KEY" ] || missing="$missing ASC_KEY_P8"
+          [ -n "$CERT" ] || missing="$missing BUILD_CERT_P12"
+          [ -n "$CERT_PASSWORD" ] || missing="$missing BUILD_CERT_PASSWORD"
           if [ -n "$missing" ]; then
             echo "::error::Missing repository secrets:$missing. See the comments at the top of testflight.yml."
             exit 1
@@ -39,7 +63,24 @@ jobs:
       - name: Generate Xcode project
         run: |
           brew install xcodegen
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER: com.leonidasantoniadis.glucoseapp/PRODUCT_BUNDLE_IDENTIFIER: $BUNDLE_ID/" App/project.yml
           xcodegen generate --spec App/project.yml
+
+      - name: Install signing certificate
+        env:
+          CERT: ${{ secrets.BUILD_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.BUILD_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
 
       - name: Archive and upload
         env:
@@ -75,12 +116,21 @@ jobs:
           grep -q "ARCHIVE SUCCEEDED" archive.log
           xcodebuild -exportArchive -archivePath build/GlucoseApp.xcarchive \
             -exportOptionsPlist ExportOptions.plist -exportPath build/export \
-            -allowProvisioningUpdates $AUTH
-          rm -f "$KEY_PATH"
+            -allowProvisioningUpdates $AUTH \
+            | tee export.log | grep -E "error:|Upload succeeded|EXPORT (SUCCEEDED|FAILED)" || true
+          grep -q "EXPORT SUCCEEDED" export.log
           echo "Uploaded build $BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP"/AuthKey_*.p8
 
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: archive-log
-          path: archive.log
+          name: testflight-logs
+          path: |
+            archive.log
+            export.log
