@@ -138,3 +138,47 @@ final class SoundPreviewPlayer: NSObject, AVAudioPlayerDelegate {
         }
     }
 }
+
+/// Plays an alarm from the app itself. App audio ignores the Silent switch and Focus, so this is how
+/// an alert marked Critical breaks through before Apple grants the Critical Alerts entitlement.
+/// Works while the app runs (foreground, or background with Bluetooth readings and "Run in background").
+@MainActor
+final class AlarmPlayer {
+    private var player: AVAudioPlayer?
+    private var stopTask: Task<Void, Never>?
+
+    /// Loops the sound for up to `seconds`. Returns false if it couldn't start.
+    func play(_ style: SoundStyle, seconds: Double = 30) -> Bool {
+        stop()
+        guard let url = SoundCatalog.url(for: style) else { return false }
+        do {
+            // .playback ignores the ring/silent switch; ducking lets it start from the background.
+            try AVAudioSession.sharedInstance().setCategory(.playback, options: [.duckOthers])
+            try AVAudioSession.sharedInstance().setActive(true)
+            let player = try AVAudioPlayer(contentsOf: url)
+            player.numberOfLoops = -1
+            player.volume = 1
+            guard player.play() else { return false }
+            self.player = player
+        } catch {
+            return false
+        }
+        stopTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.stop()
+        }
+        return true
+    }
+
+    var isPlaying: Bool { player?.isPlaying == true }
+
+    func stop() {
+        stopTask?.cancel()
+        stopTask = nil
+        guard let player else { return }
+        player.stop()
+        self.player = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+}

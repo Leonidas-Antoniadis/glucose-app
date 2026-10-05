@@ -258,7 +258,7 @@ struct RuleEditorView: View {
                 Toggle("On", isOn: $rule.isEnabled)
                 GlucoseValuePicker(title: rule.direction == .low ? "Alert below" : "Alert above",
                                    mgdL: $rule.thresholdMgdL,
-                                   range: rule.direction == .low ? 40...180 : 100...AlertRuleSet.thresholdRangeMgdL.upperBound,
+                                   range: AlertRuleSet.thresholdRangeMgdL,
                                    unit: unit)
                 if rule.confirmationMinutes > 0 {
                     Text("Waits until glucose has stayed past this for \(rule.confirmationMinutes) min. Change it under Timing.")
@@ -269,18 +269,20 @@ struct RuleEditorView: View {
 
             Section("Sound") {
                 SoundPicker(sound: $rule.sound, direction: rule.direction)
-                if rule.sound == .silent {
+                if rule.sound == .silent && !rule.isCritical {
                     Text("Silent: shows a notification without any sound. Pick Tune or Voice to hear it.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Button("Send test alert", systemImage: "bell.badge") {
-                    model.notifications.sendTest(of: rule, unit: unit)
-                }
-                Toggle("Critical Alert (sounds through Silent and Focus)", isOn: $rule.isCritical)
+                Toggle("Sound through Silent mode and Focus", isOn: criticalBinding)
                 if rule.isCritical {
-                    Slider(value: $rule.criticalVolume, in: 0.1...1) { Text("Volume") }
-                    CriticalAlertsStatus()
+                    CriticalAlertsChecklist()
+                    if model.criticalAlertsAllowed {
+                        Slider(value: $rule.criticalVolume, in: 0.1...1) { Text("Volume") }
+                    }
+                }
+                Button("Send test alert", systemImage: "bell.badge") {
+                    model.sendTestAlert(for: rule)
                 }
             }
 
@@ -345,6 +347,18 @@ struct RuleEditorView: View {
         }
     }
 
+    /// Turning on "through Silent and Focus" gives a silent rule a tune, since it has to make a sound.
+    private var criticalBinding: Binding<Bool> {
+        Binding {
+            rule.isCritical
+        } set: { on in
+            rule.isCritical = on
+            if on, rule.sound == .silent {
+                rule.sound = .tune(name: rule.direction == .low ? "alarm_loud_low" : "alarm_high")
+            }
+        }
+    }
+
     /// Maps an optional minutes value to a stepper where 0 means "off".
     private func optionalMinutes(_ keyPath: WritableKeyPath<AlertRule, Int?>) -> Binding<Int> {
         Binding {
@@ -390,9 +404,9 @@ struct TrendAlertEditorView: View {
             }
             Section("Sound") {
                 SoundPicker(sound: $alert.sound, direction: alert.kind.direction)
-                Toggle("Critical Alert", isOn: $alert.isCritical)
+                Toggle("Sound through Silent mode and Focus", isOn: $alert.isCritical)
                 if alert.isCritical {
-                    CriticalAlertsStatus()
+                    CriticalAlertsChecklist()
                 }
                 Stepper(value: $alert.snoozeMinutes, in: 5...240, step: 5) {
                     Text("Snooze \(alert.snoozeMinutes) min")

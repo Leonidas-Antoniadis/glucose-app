@@ -31,10 +31,18 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge, .criticalAlert])
     }
 
+    struct Status {
+        /// Apple's Critical Alerts entitlement is granted and the user allowed it.
+        var critical: Bool
+        /// Time Sensitive notifications are on, so alerts show during Focus.
+        var timeSensitive: Bool
+        /// Why alerts can't be seen or heard, if they can't.
+        var problem: String?
+    }
+
     /// Re-reads the notification switches, which the user can change in iOS Settings at any time.
-    /// Returns whether Critical Alerts are allowed, and why alerts can't be heard, if they can't.
     @discardableResult
-    func refreshCriticalStatus() async -> (critical: Bool, problem: String?) {
+    func refreshCriticalStatus() async -> Status {
         let settings = await center.notificationSettings()
         criticalAllowed = settings.criticalAlertSetting == .enabled
         let problem: String?
@@ -46,18 +54,11 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 ? "Notification sounds are off for this app, so alerts are silent."
                 : nil
         }
-        return (criticalAllowed, problem)
+        return Status(critical: criticalAllowed, timeSensitive: settings.timeSensitiveSetting == .enabled, problem: problem)
     }
 
-    /// Sends a rule's notification right away so its sound can be checked.
-    func sendTest(of rule: AlertRule, unit: GlucoseUnit) {
-        deliver(AlertEvent(ruleID: rule.id, ruleName: "Test: \(rule.name)", direction: rule.direction,
-                           valueMgdL: rule.thresholdMgdL, date: Date(), sound: rule.sound,
-                           isCritical: rule.isCritical, criticalVolume: rule.criticalVolume, kind: .initial),
-                unit: unit)
-    }
-
-    func deliver(_ event: AlertEvent, unit: GlucoseUnit) {
+    /// `alarmPlaying`: the app is already playing the sound itself, so the notification stays quiet.
+    func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false) {
         let content = UNMutableNotificationContent()
         content.title = event.ruleName
         let value = unit.format(mgdL: event.valueMgdL, includeSymbol: true)
@@ -70,11 +71,13 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         content.userInfo = ["ruleID": event.ruleID.uuidString]
         content.threadIdentifier = event.direction.rawValue
         let critical = event.isCritical && criticalAllowed
-        content.sound = SoundCatalog.notificationSound(for: event.sound, critical: critical, volume: event.criticalVolume)
+        content.sound = alarmPlaying && !critical
+            ? nil
+            : SoundCatalog.notificationSound(for: event.sound, critical: critical, volume: event.criticalVolume)
         if critical {
             content.interruptionLevel = .critical
         } else {
-            content.interruptionLevel = event.sound == .silent ? .active : .timeSensitive
+            content.interruptionLevel = event.sound == .silent && !event.isCritical ? .active : .timeSensitive
         }
         center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }

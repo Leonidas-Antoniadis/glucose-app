@@ -19,6 +19,8 @@ final class AppModel {
     var isLocked = false
     /// Whether iOS lets alerts marked Critical sound through Silent mode and Focus.
     private(set) var criticalAlertsAllowed = false
+    /// Whether Time Sensitive notifications are on, so alerts show during Focus.
+    private(set) var timeSensitiveAllowed = true
     /// Why alerts can't be seen or heard (notifications or their sounds turned off), if so.
     private(set) var notificationProblem: String?
     let sensor: SensorConnection
@@ -32,6 +34,7 @@ final class AppModel {
     @ObservationIgnored let stores: AppStores
     @ObservationIgnored let notifications = NotificationService()
     @ObservationIgnored private let voice = VoiceAnnouncer()
+    @ObservationIgnored private let alarm = AlarmPlayer()
     @ObservationIgnored let surfaces = SurfaceUpdater()
     @ObservationIgnored private var demoTask: Task<Void, Never>?
     @ObservationIgnored private var demoMinute = 0
@@ -274,8 +277,9 @@ final class AppModel {
     private func deliver(_ events: [AlertEvent]) {
         guard !events.isEmpty else { return }
         for event in events {
-            notifications.deliver(event, unit: unit)
-            if settings.speakValues, isActive {
+            let alarmPlaying = playAlarmIfNeeded(event)
+            notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying)
+            if settings.speakValues, isActive, !alarmPlaying {
                 voice.announce(event, unit: unit)
             }
         }
@@ -285,14 +289,37 @@ final class AppModel {
         }
     }
 
+    /// A Critical alert plays from the app while iOS won't let its notification through Silent and Focus.
+    private func playAlarmIfNeeded(_ event: AlertEvent, seconds: Double = 30) -> Bool {
+        guard event.isCritical, !notifications.criticalAllowed else { return false }
+        let style = event.sound == .silent
+            ? SoundStyle.tune(name: event.direction == .low ? "alarm_loud_low" : "alarm_high")
+            : event.sound
+        return alarm.play(style, seconds: seconds)
+    }
+
+    /// Sends a rule's alert right away, exactly as it would sound, without logging it.
+    func sendTestAlert(for rule: AlertRule) {
+        let event = AlertEvent(ruleID: rule.id, ruleName: "Test: \(rule.name)", direction: rule.direction,
+                               valueMgdL: rule.thresholdMgdL, date: Date(), sound: rule.sound,
+                               isCritical: rule.isCritical, criticalVolume: rule.criticalVolume, kind: .initial)
+        notifications.deliver(event, unit: unit, alarmPlaying: playAlarmIfNeeded(event, seconds: 8))
+    }
+
+    func stopAlarm() {
+        alarm.stop()
+    }
+
     func refreshNotificationStatus() async {
         let status = await notifications.refreshCriticalStatus()
         criticalAlertsAllowed = status.critical
+        timeSensitiveAllowed = status.timeSensitive
         notificationProblem = status.problem
     }
 
     func acknowledge(ruleID: UUID) {
         engine.acknowledge(ruleID: ruleID, at: Date())
+        alarm.stop()
     }
 
     // MARK: Sensor events
@@ -456,6 +483,10 @@ final class AppModel {
         case .active:
             let wasInactive = !isActive
             isActive = true
+            if wasInactive {
+                // Opening the app (or tapping the notification) means the alarm was heard.
+                alarm.stop()
+            }
             if wasInactive, settings.biometricLock, isLocked {
                 Task { await unlock() }
             }

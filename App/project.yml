@@ -46,7 +46,7 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIRequiresFullScreen: true
-        UIBackgroundModes: [bluetooth-central]
+        UIBackgroundModes: [bluetooth-central, audio]
         NSBluetoothAlwaysUsageDescription: Glucose connects to your Libre sensor over Bluetooth to receive readings every minute.
         NFCReaderUsageDescription: Glucose reads your Libre sensor over NFC to pair with it and to fetch its history.
         NSFaceIDUsageDescription: Glucose can lock your health data behind Face ID.

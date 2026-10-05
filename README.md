@@ -42,12 +42,12 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 |---|---|
 | Sensor link | NFC pairing (takes over a sensor started with LibreLink), Bluetooth stream every minute, automatic reconnect and background restoration, NFC scan to fill gaps (8 h history) |
 | Values | Fingerstick calibration of the raw signal (Abbott's algorithm isn't public), accuracy tracking (MARD, 15/15 band), mg/dL and mmol/L |
-| Alerts | Up to 5 low + 5 high rules: silent / tune / voice, Critical Alert option, repeat, snooze, schedule, confirmation delay, re-arm margin. Only the most severe crossed rule sounds |
+| Alerts | Up to 5 low + 5 high rules at any value from 40 to 400 mg/dL: silent / tune / voice, sound through Silent mode and Focus, repeat, snooze, schedule, confirmation delay, re-arm margin. Only the most severe crossed rule sounds |
 | Trend alerts | "Low soon" (20-minute projection), falling fast, rising fast |
 | Other alerts | Missing data (scheduled ahead, fires even if the app is killed), sensor ending, Bluetooth off, low phone battery, app build expiring |
 | Sounds | Separate low and high alarms (including ultra loud, high-pitched ones), chime, pulse, 9 voice clips, import your own tunes |
 | Reports | 1-90 days: time in ranges with consensus targets, mean, GMI, SD, CV, day/night, AGP, daily overlay, PDF and CSV export |
-| Logbook | Meals, insulin, exercise and notes, shown as chart markers |
+| Logbook | Meals, insulin, exercise and notes, shown as chart markers. From the home screen: food in one tap, insulin with your usual doses, Undo, and when you last took insulin and ate |
 | Privacy | All data on the phone, excluded from iCloud backup, kept for 91 days then deleted, optional Face ID lock, password-encrypted backup file |
 | Battery | "Run in background" switch: off stops the sensor connection while the app is closed (no alerts then) and resumes when you open it |
 | Surfaces | Home-screen and lock-screen widgets, Live Activity with Dynamic Island, button to bring the Live Activity back after swiping it away |
@@ -124,6 +124,17 @@ The protocol follows community reverse-engineering and is verified here only wit
 - A rule fires once per crossing, repeats until acknowledged (or up to its max), and re-arms after recovery plus margin.
 - The app warns before you remove or turn off your last alert at or below 60 mg/dL.
 - Every decision is written to a decision log (Settings → Diagnostics).
+- Each alert has a **Send test alert** button that plays it exactly as it would sound.
+
+### Alerts through Silent mode and Focus (no Apple approval needed)
+
+Turn on **Sound through Silent mode and Focus** for an alert (Alerts → tap the alert). Then:
+
+1. **Silent switch:** the app plays the alarm itself, which iOS doesn't mute. Keep **Run in background** on (Settings → Battery and Lock Screen) and the sensor connected. It plays at your **media volume**, so keep that turned up. It stops when you open the app, tap Snooze, or after 30 seconds.
+2. **Focus:** on the iPhone, open **Settings → Notifications → Glucose** and turn on **Time Sensitive Notifications**. The "Open Settings" button on the home screen's Critical alerts card goes straight there.
+   - If a Focus still hides the alerts, open **Settings → Focus → (each Focus) → Apps** and add **Glucose**.
+
+The home screen's **Critical alerts** card shows a check for each step. Once Apple grants the app the Critical Alerts entitlement, alerts become true Critical Alerts: they sound at full volume through everything, even when the app isn't running.
 
 ## References
 
