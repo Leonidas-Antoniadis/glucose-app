@@ -345,7 +345,7 @@ final class AppModel {
         switch direction {
         case .low:
             threshold = max(AlertRuleSet.thresholdRangeMgdL.lowerBound, (existing.min() ?? 80) - 5)
-            sound = .tune(name: "alarm_low")
+            sound = .tune(name: "alarm_loud_low")
         case .high:
             threshold = min(AlertRuleSet.thresholdRangeMgdL.upperBound, (existing.max() ?? 180) + 20)
             sound = .tune(name: "alarm_high")

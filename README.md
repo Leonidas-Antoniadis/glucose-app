@@ -40,7 +40,7 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 | Alerts | Up to 5 low + 5 high rules: silent / tune / voice, Critical Alert option, repeat, snooze, schedule, confirmation delay, re-arm margin. Only the most severe crossed rule sounds |
 | Trend alerts | "Low soon" (20-minute projection), falling fast, rising fast |
 | Other alerts | Missing data (scheduled ahead, fires even if the app is killed), sensor ending, Bluetooth off, low phone battery, app build expiring |
-| Sounds | Separate low and high alarms, chime, pulse, 9 voice clips, import your own tunes |
+| Sounds | Separate low and high alarms (including ultra loud, high-pitched ones), chime, pulse, 9 voice clips, import your own tunes |
 | Reports | 1-90 days: time in ranges with consensus targets, mean, GMI, SD, CV, day/night, AGP, daily overlay, PDF and CSV export |
 | Logbook | Meals, insulin, exercise and notes, shown as chart markers |
 | Privacy | All data on the phone, excluded from iCloud backup, optional Face ID lock, password-encrypted backup file |

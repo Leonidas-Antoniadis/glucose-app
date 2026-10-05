@@ -43,7 +43,7 @@ final class RuleSetAndScheduleTests: XCTestCase {
     func testBasicPresetMatchesPlanExample() {
         let lows = AlertRuleSet.basic().rules(for: .low)
         XCTAssertEqual(lows.map(\.thresholdMgdL), [80, 70, 60])
-        XCTAssertEqual(lows.map(\.sound), [.silent, .tune(name: "alarm_low"), .voice(clip: "glucose_very_low")])
+        XCTAssertEqual(lows.map(\.sound), [.silent, .tune(name: "alarm_loud_low"), .voice(clip: "glucose_very_low")])
     }
 
     func testDuplicate() throws {

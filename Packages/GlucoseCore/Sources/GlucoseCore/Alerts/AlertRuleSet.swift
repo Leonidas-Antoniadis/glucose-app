@@ -138,7 +138,7 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
         // Force-try is safe: the preset is within limits and covered by tests.
         try! AlertRuleSet(rules: [
             AlertRule(name: "Low", direction: .low, thresholdMgdL: 80, sound: .silent, repeatIntervalMinutes: nil),
-            AlertRule(name: "Lower", direction: .low, thresholdMgdL: 70, sound: .tune(name: "alarm_low"), repeatIntervalMinutes: 10),
+            AlertRule(name: "Lower", direction: .low, thresholdMgdL: 70, sound: .tune(name: "alarm_loud_low"), repeatIntervalMinutes: 10),
             AlertRule(name: "Urgent low", direction: .low, thresholdMgdL: 60, sound: .voice(clip: "glucose_very_low"),
                       isCritical: true, repeatIntervalMinutes: 5),
             AlertRule(name: "High", direction: .high, thresholdMgdL: 180, sound: .silent, repeatIntervalMinutes: nil,
@@ -153,7 +153,7 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
     /// Fewer, louder alerts that only run overnight, plus an always-on urgent low.
     public static func night() -> AlertRuleSet {
         try! AlertRuleSet(rules: [
-            AlertRule(name: "Night low", direction: .low, thresholdMgdL: 70, sound: .tune(name: "alarm_low"),
+            AlertRule(name: "Night low", direction: .low, thresholdMgdL: 70, sound: .tune(name: "alarm_loud_low"),
                       isCritical: true, repeatIntervalMinutes: 5, schedule: .nightOnly, confirmationMinutes: 10),
             AlertRule(name: "Urgent low", direction: .low, thresholdMgdL: 55, sound: .voice(clip: "glucose_very_low"),
                       isCritical: true, repeatIntervalMinutes: 5),
@@ -166,7 +166,7 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
     public static func sensitive() -> AlertRuleSet {
         try! AlertRuleSet(rules: [
             AlertRule(name: "Heading low", direction: .low, thresholdMgdL: 90, sound: .silent, repeatIntervalMinutes: nil),
-            AlertRule(name: "Low", direction: .low, thresholdMgdL: 75, sound: .tune(name: "alarm_low"), repeatIntervalMinutes: 10),
+            AlertRule(name: "Low", direction: .low, thresholdMgdL: 75, sound: .tune(name: "alarm_loud_low"), repeatIntervalMinutes: 10),
             AlertRule(name: "Urgent low", direction: .low, thresholdMgdL: 55, sound: .voice(clip: "glucose_very_low"),
                       isCritical: true, repeatIntervalMinutes: 5),
             AlertRule(name: "High", direction: .high, thresholdMgdL: 160, sound: .silent, repeatIntervalMinutes: nil,

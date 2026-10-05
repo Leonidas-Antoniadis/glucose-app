@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Observation
 import UserNotifications
 import GlucoseCore
 
@@ -12,6 +13,8 @@ enum SoundCatalog {
     }
 
     static let tunes: [Option] = [
+        Option(id: "alarm_loud_low", title: "Ultra loud low (piercing beeps)"),
+        Option(id: "alarm_loud_high", title: "Ultra loud high (piercing siren)"),
         Option(id: "alarm_low", title: "Low alarm (urgent, falling tones)"),
         Option(id: "alarm_high", title: "High alarm (rising two-tone)"),
         Option(id: "chime", title: "Chime"),
@@ -102,22 +105,36 @@ enum SoundCatalog {
     }
 }
 
-/// Plays a sound preview in the rule editor.
+/// Plays a sound preview in the rule editor. `playing` drives the Play/Stop button.
 @MainActor
-final class SoundPreviewPlayer {
+@Observable
+final class SoundPreviewPlayer: NSObject, AVAudioPlayerDelegate {
     static let shared = SoundPreviewPlayer()
-    private var player: AVAudioPlayer?
+    @ObservationIgnored private var player: AVAudioPlayer?
+    private(set) var playing: SoundStyle?
 
     func play(_ style: SoundStyle) {
         player?.stop()
         guard let url = SoundCatalog.url(for: style) else { return }
+        // .playback sounds even when the ring/silent switch is on silent.
         try? AVAudioSession.sharedInstance().setCategory(.playback, options: [.duckOthers])
         try? AVAudioSession.sharedInstance().setActive(true)
         player = try? AVAudioPlayer(contentsOf: url)
-        player?.play()
+        player?.delegate = self
+        player?.volume = 1
+        playing = player?.play() == true ? style : nil
     }
 
     func stop() {
         player?.stop()
+        player = nil
+        playing = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            if self.player === player { self.stop() }
+        }
     }
 }

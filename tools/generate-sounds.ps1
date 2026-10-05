@@ -40,6 +40,39 @@ function New-Tune([object[]]$notes, [int]$repeats, [double]$volume) {
     return $list.ToArray()
 }
 
+# Ultra loud: full-scale, square-like tones at 2.5-4 kHz, where phone speakers are loudest and
+# the ear is most sensitive (the band smoke detectors use). Each note: frequency (or start and
+# end frequency for a sweep) and duration in seconds.
+function New-LoudTune([object[]]$notes, [double]$seconds) {
+    $list = New-Object System.Collections.Generic.List[int16]
+    $total = [int]($seconds * $sampleRate)
+    $phase = 0.0
+    while ($list.Count -lt $total) {
+        foreach ($note in $notes) {
+            $count = [int]($note[$note.Length - 1] * $sampleRate)
+            $from = [double]$note[0]
+            $to = if ($note.Length -eq 3) { [double]$note[1] } else { $from }
+            for ($i = 0; $i -lt $count; $i++) {
+                if ($from -eq 0) { $list.Add(0); $phase = 0.0; continue }
+                $phase += 2 * [Math]::PI * ($from + ($to - $from) * $i / $count) / $sampleRate
+                # Fundamental plus third harmonic is close to a square wave (louder than a sine for the
+                # same peak) while staying below the 11 kHz limit of 22.05 kHz audio.
+                $v = ([Math]::Sin($phase) + [Math]::Sin(3 * $phase) / 3) / 0.89
+                $env = [Math]::Min(1.0, [Math]::Min($i / 60.0, ($count - $i) / 60.0))
+                $list.Add([int16]([Math]::Max(-1.0, [Math]::Min(1.0, $v)) * $env * 32700))
+            }
+        }
+    }
+    return $list.GetRange(0, $total).ToArray()
+}
+
+# Ultra loud low: rapid piercing beeps that alternate pitch, like a smoke alarm. Hard to sleep through.
+Write-Wav (Join-Path $out 'tune_alarm_loud_low.wav') (New-LoudTune @(
+        @(3500, 0.07), @(0, 0.03), @(3500, 0.07), @(0, 0.03), @(3500, 0.07), @(0, 0.03), @(3500, 0.07), @(0, 0.08),
+        @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.18)) 29)
+# Ultra loud high: fast high-pitched siren sweeping up and down.
+Write-Wav (Join-Path $out 'tune_alarm_loud_high.wav') (New-LoudTune @(@(2500, 3600, 0.25), @(3600, 2500, 0.25), @(0, 0.05)) 29)
+
 Write-Wav (Join-Path $out 'tune_chime.wav') (New-Tune @(@(880, 0.18), @(1175, 0.18), @(1568, 0.35), @(0, 0.6)) 2 0.7)
 # Loud alarms sound different for lows and highs, so you know which it is without looking.
 # Low: urgent, fast descending three-tone, repeated.

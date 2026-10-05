@@ -194,10 +194,18 @@ struct SoundPicker: View {
             }
         }
         if sound != .silent {
-            Button {
-                SoundPreviewPlayer.shared.play(sound)
-            } label: {
-                Label("Play", systemImage: "play.circle")
+            if SoundPreviewPlayer.shared.playing == sound {
+                Button(role: .destructive) {
+                    SoundPreviewPlayer.shared.stop()
+                } label: {
+                    Label("Stop", systemImage: "stop.circle.fill")
+                }
+            } else {
+                Button {
+                    SoundPreviewPlayer.shared.play(sound)
+                } label: {
+                    Label("Play", systemImage: "play.circle")
+                }
             }
         }
     }
@@ -212,7 +220,7 @@ struct SoundPicker: View {
         } set: { newKind in
             switch newKind {
             case .silent: sound = .silent
-            case .tune: sound = .tune(name: direction == .low ? "alarm_low" : "alarm_high")
+            case .tune: sound = .tune(name: direction == .low ? "alarm_loud_low" : "alarm_high")
             case .voice: sound = .voice(clip: direction == .low ? "glucose_low" : "glucose_high")
             }
         }
