@@ -40,6 +40,23 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
     /// Receives raw bytes as they are read (also when decoding later fails), for the capture log.
     var onCapture: ((String, [UInt8]) -> Void)?
 
+    struct RawRead {
+        let uid: [UInt8]
+        let patchInfo: [UInt8]
+        let fram: [UInt8]
+    }
+
+    private var lastRead: RawRead?
+
+    /// The bytes of the most recent read, even if it was aborted afterwards. Cleared when taken.
+    func takeLastRead() -> RawRead? {
+        lock.lock()
+        defer { lock.unlock() }
+        let read = lastRead
+        lastRead = nil
+        return read
+    }
+
     private var continuation: CheckedContinuation<ScanResult, Error>?
     private var session: NFCTagReaderSession?
     private var enableStreaming = false
@@ -52,6 +69,7 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
         return try await withCheckedThrowingContinuation { continuation in
             lock.lock()
             self.continuation = continuation
+            self.lastRead = nil
             lock.unlock()
             self.enableStreaming = enableStreaming
             self.allowUnverified = allowUnverified
@@ -110,6 +128,9 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
                     for data in blocks { fram += data }
                     block += count
                 }
+                self.lock.lock()
+                self.lastRead = RawRead(uid: uid, patchInfo: patchInfo, fram: fram)
+                self.lock.unlock()
                 self.onCapture?("NFC uid", uid)
                 self.onCapture?("NFC patch", patchInfo)
                 self.onCapture?("NFC fram", fram)

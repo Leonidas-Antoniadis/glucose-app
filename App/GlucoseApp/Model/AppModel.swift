@@ -137,16 +137,67 @@ final class AppModel {
     private func startDemo() {
         demoMinute = Int(Date().timeIntervalSince(demoSensor.startedAt) / 60)
         readings = demoSensor.readings(minutes: max(0, demoMinute - 14 * 1440)..<demoMinute)
+        let simulated = demoSensor
+        sensor.startDemoInspector(startedAt: demoSensor.startedAt, currentMinute: demoMinute) { minute in
+            Int((simulated.reading(atMinute: minute).mgdL * 8.5).rounded())
+        }
+        if ScreenshotMode.isActive {
+            seedSampleData()
+        }
         let speed = settings.demoSpeed
         demoTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: speed.interval)
                 guard let self, !Task.isCancelled else { return }
                 let reading = self.demoSensor.reading(atMinute: self.demoMinute)
+                self.sensor.simulatePacket(ageMinutes: self.demoMinute)
                 self.demoMinute += 1
                 self.ingest([reading], live: true)
             }
         }
+    }
+
+    /// Example notes, fingersticks and alerts for the CI screenshots. Kept in memory only.
+    private func seedSampleData() {
+        guard let end = readings.last?.timestamp else { return }
+        func ago(_ minutes: Double) -> Date { end.addingTimeInterval(-minutes * 60) }
+        sensor.seedSampleHistory(now: end)
+        logbook = [
+            LogEntry(date: ago(25), kind: .insulin(units: 4, type: .rapid), text: "Correction"),
+            LogEntry(date: ago(95), kind: .exercise(minutes: 40), text: "Walk"),
+            LogEntry(date: ago(170), kind: .meal(carbsGrams: 60), text: "Lunch: pasta"),
+            LogEntry(date: ago(172), kind: .insulin(units: 6, type: .rapid), text: ""),
+            LogEntry(date: ago(600), kind: .insulin(units: 14, type: .long), text: "Evening basal"),
+            LogEntry(date: ago(640), kind: .meal(carbsGrams: 45), text: "Dinner"),
+            LogEntry(date: ago(900), kind: .note, text: "Slept badly, a bit stressed"),
+        ]
+        fingersticks = [
+            FingerstickEntry(date: ago(60), mgdL: (readings(lastHours: 1.1).first?.mgdL ?? 110) + 6, usedForCalibration: false),
+            FingerstickEntry(date: ago(480), mgdL: 124, usedForCalibration: true),
+        ]
+        let rules = settings.ruleSet.rules
+        if let low = rules.first(where: { $0.name == "Lower" }), let high = rules.first(where: { $0.name == "High" }) {
+            recentEvents = [
+                AlertEvent(ruleID: low.id, ruleName: low.name, direction: .low, valueMgdL: 68, date: ago(130),
+                           sound: low.sound, isCritical: false, criticalVolume: 1, kind: .initial),
+                AlertEvent(ruleID: high.id, ruleName: high.name, direction: .high, valueMgdL: 186, date: ago(260),
+                           sound: high.sound, isCritical: false, criticalVolume: 1, kind: .initial),
+            ]
+        }
+    }
+
+    /// Readings for the home chart: full resolution for the last 3 hours, one per 5 minutes before that.
+    var chartReadings: [GlucoseReading] {
+        guard let latest else { return [] }
+        let detailedFrom = latest.timestamp.addingTimeInterval(-3 * 3600)
+        var result: [GlucoseReading] = []
+        result.reserveCapacity(5000)
+        var lastKept = Date.distantPast
+        for reading in readings where reading.timestamp >= detailedFrom || reading.timestamp.timeIntervalSince(lastKept) >= 300 {
+            result.append(reading)
+            lastKept = reading.timestamp
+        }
+        return result
     }
 
     // MARK: Reading pipeline

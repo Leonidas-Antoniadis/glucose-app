@@ -62,6 +62,8 @@ struct SettingsView: View {
                 }
 
                 Section("Diagnostics") {
+                    NavigationLink("Raw sensor data") { RawDataView() }
+                    NavigationLink("Sensor history") { SensorHistoryView() }
                     NavigationLink("Alert decision log") {
                         List(model.decisionLog, id: \.self) { line in
                             Text(line).font(.caption.monospaced())

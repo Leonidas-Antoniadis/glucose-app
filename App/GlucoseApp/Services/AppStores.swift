@@ -10,6 +10,7 @@ struct AppStores {
     let sensor: JSONFileStore<LibreSensorRecord>
     let logbook: JSONFileStore<[LogEntry]>
     let fingersticks: JSONFileStore<[FingerstickEntry]>
+    let sensorHistory: JSONFileStore<SensorHistory>
     let archive: ReadingArchive?
     let capturesURL: URL
 
@@ -26,6 +27,8 @@ struct AppStores {
         sensor = JSONFileStore(url: directory.appendingPathComponent("sensor.json"))
         logbook = JSONFileStore(url: directory.appendingPathComponent("logbook.json"))
         fingersticks = JSONFileStore(url: directory.appendingPathComponent("fingersticks.json"))
+        // Kept on "Delete all data", since it's what support asks for.
+        sensorHistory = JSONFileStore(url: directory.appendingPathComponent("sensor-history.json"))
         archive = try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
         capturesURL = directory.appendingPathComponent("captures.log")
 

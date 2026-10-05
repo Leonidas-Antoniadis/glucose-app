@@ -22,7 +22,9 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if model.settings.onboardingDone {
+            if let screen = ScreenshotMode.screen {
+                ScreenshotScreen(name: screen)
+            } else if model.settings.onboardingDone {
                 MainTabs()
             } else {
                 OnboardingView()
@@ -44,6 +46,12 @@ enum ScreenshotMode {
     static let arguments = ProcessInfo.processInfo.arguments
     static let isActive = arguments.contains("-screenshots")
     static let showsOnboarding = arguments.contains("-onboarding")
+
+    /// `-screen NAME` opens a single screen (sensor, raw, packet, nfc, history, rule, add).
+    static var screen: String? {
+        guard isActive, let index = arguments.firstIndex(of: "-screen"), index + 1 < arguments.count else { return nil }
+        return arguments[index + 1]
+    }
 
     static var tab: Int {
         guard let index = arguments.firstIndex(of: "-tab"), index + 1 < arguments.count else { return 0 }
@@ -86,6 +94,46 @@ struct LockView: View {
                 Text("Glucose is locked").font(.title2.bold())
                 Button("Unlock") { Task { await model.unlock() } }
                     .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+}
+
+/// Single screens for CI screenshots, filled with demo data.
+struct ScreenshotScreen: View {
+    @Environment(AppModel.self) private var model
+    @Environment(SensorConnection.self) private var sensor
+    let name: String
+
+    var body: some View {
+        NavigationStack {
+            switch name {
+            case "sensor":
+                SensorView()
+            case "raw":
+                RawDataView()
+            case "packet":
+                if let packet = sensor.packets.first {
+                    PacketDetailView(record: packet, unit: model.unit)
+                } else {
+                    ProgressView()
+                }
+            case "nfc":
+                if let read = sensor.nfcRecords.first {
+                    NFCDetailView(record: read)
+                } else {
+                    ProgressView()
+                }
+            case "history":
+                SensorHistoryView()
+            case "rule":
+                if let rule = model.settings.ruleSet.rules.first(where: { $0.name == "Lower" }) ?? model.settings.ruleSet.rules.first {
+                    RuleEditorView(rule: rule)
+                }
+            case "add":
+                AddLogEntryView(kind: .fastInsulin)
+            default:
+                MainTabs()
             }
         }
     }

@@ -81,6 +81,12 @@ public enum LibreLayout {
         public let range: Range<Int>
         public let name: String
         public let detail: String
+
+        public init(range: Range<Int>, name: String, detail: String) {
+            self.range = range
+            self.name = name
+            self.detail = detail
+        }
     }
 
     /// The 46-byte packet as received.

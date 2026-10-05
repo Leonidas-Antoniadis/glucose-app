@@ -12,8 +12,8 @@ struct SensorView: View {
         @Bindable var model = model
         List {
             Section("Status") {
-                MetricRow(label: "Connection", value: model.isDemo ? "Demo mode" : sensor.status.title)
-                if let record = sensor.record {
+                MetricRow(label: "Connection", value: model.isDemo ? "Demo sensor (simulated)" : sensor.status.title)
+                if let record = model.isDemo ? sensor.demoRecord : sensor.record {
                     MetricRow(label: "Type", value: record.type.displayName)
                     MetricRow(label: "Serial (computed)", value: record.serial)
                     MetricRow(label: "Started", value: record.activatedAt.formatted(date: .abbreviated, time: .shortened))
@@ -22,6 +22,19 @@ struct SensorView: View {
                     if let last = sensor.lastPacketAt {
                         MetricRow(label: "Last Bluetooth packet", value: last.formatted(date: .omitted, time: .standard))
                     }
+                }
+            }
+
+            Section {
+                NavigationLink {
+                    RawDataView()
+                } label: {
+                    Label("Raw sensor data", systemImage: "list.bullet.rectangle")
+                }
+                NavigationLink {
+                    SensorHistoryView()
+                } label: {
+                    Label("Sensor history (last \(SensorHistory.limit))", systemImage: "clock.arrow.circlepath")
                 }
             }
 

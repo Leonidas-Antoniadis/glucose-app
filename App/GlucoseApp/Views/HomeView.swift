@@ -5,6 +5,7 @@ import LibreProtocol
 struct HomeView: View {
     @Environment(AppModel.self) private var model
     @State private var hours: Double = 3
+    @State private var quickAdd: QuickLogKind?
 
     var body: some View {
         NavigationStack {
@@ -12,17 +13,20 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     StatusBanners()
                     CurrentValueCard()
-                    Picker("Chart range", selection: $hours) {
+                    QuickAddBar { quickAdd = $0 }
+                    Picker("Chart window", selection: $hours) {
                         ForEach([3.0, 6, 12, 24], id: \.self) { Text("\(Int($0)) h").tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    GlucoseChart(readings: model.readings(lastHours: hours), unit: model.unit, entries: model.logbook)
-                        .frame(height: 260)
+                    GlucoseChart(readings: model.chartReadings, unit: model.unit, entries: model.logbook,
+                                 fingersticks: model.fingersticks, visibleHours: hours)
+                        .frame(height: 300)
                     RecentAlertsList()
                 }
                 .padding()
             }
             .navigationTitle("Glucose")
+            .sheet(item: $quickAdd) { kind in AddLogEntryView(kind: kind) }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {

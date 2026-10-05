@@ -110,8 +110,15 @@ jobs:
           for TAB in 0 1 2 3 4; do
             shoot -tab $TAB; xcrun simctl io "$UDID" screenshot "screenshots/$((TAB+1))-tab$TAB.png"
           done
+          shoot -tab 0 -select; xcrun simctl io "$UDID" screenshot screenshots/7-home-chart-selected.png
+          N=8
+          for SCREEN in add sensor raw packet nfc history rule; do
+            shoot -screen $SCREEN; xcrun simctl io "$UDID" screenshot "screenshots/$N-$SCREEN.png"
+            N=$((N+1))
+          done
           xcrun simctl ui "$UDID" appearance dark
           shoot -tab 0; xcrun simctl io "$UDID" screenshot screenshots/6-home-dark.png
+          shoot -screen packet; xcrun simctl io "$UDID" screenshot screenshots/15-packet-dark.png
           ls -la screenshots
 
       - uses: actions/upload-artifact@v4
