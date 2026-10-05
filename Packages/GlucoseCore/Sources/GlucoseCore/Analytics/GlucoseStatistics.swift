@@ -45,6 +45,11 @@ public struct GlucoseStatistics: Hashable, Sendable {
         let values = readings
             .filter { period.contains($0.timestamp) }
             .map(\.mgdL)
+        self.init(values: values, expectedCount: period.duration / 60 / expectedIntervalMinutes)
+    }
+
+    /// - Parameter expectedCount: how many readings a complete period would contain.
+    public init?(values: [Double], expectedCount: Double) {
         guard !values.isEmpty else { return nil }
 
         let n = Double(values.count)
@@ -69,7 +74,6 @@ public struct GlucoseStatistics: Hashable, Sendable {
             veryHigh: fraction { $0 > 250 }
         )
 
-        let expected = period.duration / 60 / expectedIntervalMinutes
-        dataSufficiency = expected > 0 ? min(1, n / expected) : 0
+        dataSufficiency = expectedCount > 0 ? min(1, n / expectedCount) : 0
     }
 }

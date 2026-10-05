@@ -36,9 +36,17 @@ public struct AlertEngine: Sendable {
         public var snoozedUntil: Date?
     }
 
+    public struct TrendState: Hashable, Sendable {
+        public var fired = false
+        public var snoozedUntil: Date?
+    }
+
     public var ruleSet: AlertRuleSet
     public var calendar: Calendar
     public private(set) var states: [UUID: RuleState] = [:]
+    public private(set) var trendStates: [UUID: TrendState] = [:]
+    /// The last 30 minutes of readings, for trend calculations.
+    public private(set) var recent: [GlucoseReading] = []
     /// Log of every decision, for debugging and tuning thresholds.
     public private(set) var log: [String] = []
     public var maxLogEntries = 500
@@ -52,6 +60,9 @@ public struct AlertEngine: Sendable {
         let now = reading.timestamp
         let value = reading.mgdL
         var events: [AlertEvent] = []
+
+        recent.append(reading)
+        recent.removeAll { now.timeIntervalSince($0.timestamp) > 30 * 60 || $0.timestamp > now }
 
         // Forget state for rules that were deleted.
         let ids = Set(ruleSet.rules.map(\.id))
@@ -113,19 +124,64 @@ public struct AlertEngine: Sendable {
                 record(now, "fired \(top.name) (\(kind)) at \(value)")
             }
         }
+        events += processTrendAlerts(value: value, now: now)
+        return events
+    }
+
+    /// Predictive and rate-of-change alerts: one alert per episode, re-armed with hysteresis.
+    private mutating func processTrendAlerts(value: Double, now: Date) -> [AlertEvent] {
+        let ids = Set(ruleSet.trendAlerts.map(\.id))
+        trendStates = trendStates.filter { ids.contains($0.key) }
+
+        let rate = Trend.ratePerMinute(recent)
+        // A threshold low that is already sounding makes "low soon" redundant.
+        let lowAlreadyCrossed = ruleSet.rules(for: .low).contains { $0.isEnabled && $0.isCrossed(by: value) }
+        var events: [AlertEvent] = []
+
+        for alert in ruleSet.trendAlerts where alert.isEnabled {
+            let projected = Trend.projected(recent, minutesAhead: alert.minutesAhead)
+            var state = trendStates[alert.id] ?? TrendState()
+
+            if state.fired, alert.hasCleared(value: value, rate: rate, projected: projected) {
+                state = TrendState()
+                record(now, "re-armed \(alert.name)")
+            }
+            let triggered = alert.isTriggered(value: value, rate: rate, projected: projected)
+            let suppressed = alert.kind.direction == .low && lowAlreadyCrossed
+            let snoozed = state.snoozedUntil.map { now < $0 } ?? false
+
+            if triggered, !state.fired, !suppressed, !snoozed, alert.schedule.isActive(at: now, calendar: calendar) {
+                state.fired = true
+                events.append(AlertEvent(
+                    ruleID: alert.id, ruleName: alert.name, direction: alert.kind.direction, valueMgdL: value, date: now,
+                    sound: alert.sound, isCritical: alert.isCritical, criticalVolume: 1, kind: .initial
+                ))
+                record(now, "fired \(alert.name) at \(value), rate \(rate.map { String(format: "%.2f", $0) } ?? "-")")
+            }
+            trendStates[alert.id] = state
+        }
         return events
     }
 
     /// Acknowledging silences the rule for its snooze duration.
     public mutating func acknowledge(ruleID: UUID, at date: Date) {
-        guard let rule = ruleSet.rules.first(where: { $0.id == ruleID }) else { return }
-        snooze(ruleID: ruleID, until: date.addingTimeInterval(Double(rule.snoozeMinutes) * 60))
+        if let rule = ruleSet.rules.first(where: { $0.id == ruleID }) {
+            snooze(ruleID: ruleID, until: date.addingTimeInterval(Double(rule.snoozeMinutes) * 60))
+        } else if let alert = ruleSet.trendAlerts.first(where: { $0.id == ruleID }) {
+            trendStates[ruleID, default: TrendState()].snoozedUntil = date.addingTimeInterval(Double(alert.snoozeMinutes) * 60)
+            record(date, "snoozed \(alert.name)")
+        }
     }
 
     public mutating func snooze(ruleID: UUID, until date: Date) {
         guard states[ruleID] != nil else { return }
         states[ruleID]?.snoozedUntil = date
         record(date, "snoozed \(ruleID) until \(date)")
+    }
+
+    /// Ids of rules that are currently past their threshold (for the home screen status).
+    public var activeRuleIDs: [UUID] {
+        states.filter { $0.value.crossedSince != nil }.map(\.key)
     }
 
     private func dueKind(for rule: AlertRule, now: Date) -> AlertEvent.Kind? {

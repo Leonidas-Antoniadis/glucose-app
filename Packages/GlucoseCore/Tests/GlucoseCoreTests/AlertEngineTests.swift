@@ -11,7 +11,7 @@ final class AlertEngineTests: XCTestCase {
     }
 
     private func engine(_ rules: [AlertRule]) throws -> AlertEngine {
-        AlertEngine(ruleSet: try AlertRuleSet(rules: rules), calendar: TestSupport.utc)
+        AlertEngine(ruleSet: try AlertRuleSet(rules: rules, trendAlerts: []), calendar: TestSupport.utc)
     }
 
     /// Feeds values one per minute and returns the names that fired at each minute.

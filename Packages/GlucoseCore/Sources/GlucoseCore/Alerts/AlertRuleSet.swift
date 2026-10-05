@@ -9,6 +9,8 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
     public static let thresholdRangeMgdL: ClosedRange<Double> = 40...400
 
     public private(set) var rules: [AlertRule]
+    /// Predictive low and rate-of-change alerts. They don't count toward the 5 + 5 limit.
+    public var trendAlerts: [TrendAlert]
 
     public enum RuleSetError: Error, Equatable {
         case tooManyRules(AlertDirection)
@@ -16,11 +18,40 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
         case ruleNotFound(UUID)
     }
 
-    public init(rules: [AlertRule] = []) throws {
+    public init(rules: [AlertRule] = [], trendAlerts: [TrendAlert] = TrendAlert.defaults()) throws {
         self.rules = []
+        self.trendAlerts = trendAlerts
         for rule in rules {
             try add(rule)
         }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rules, trendAlerts
+    }
+
+    // Settings saved before trend alerts existed have no `trendAlerts` key.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rules = try container.decode([AlertRule].self, forKey: .rules)
+        trendAlerts = try container.decodeIfPresent([TrendAlert].self, forKey: .trendAlerts) ?? TrendAlert.defaults()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(rules, forKey: .rules)
+        try container.encode(trendAlerts, forKey: .trendAlerts)
+    }
+
+    public mutating func updateTrendAlert(_ alert: TrendAlert) {
+        if let index = trendAlerts.firstIndex(where: { $0.id == alert.id }) {
+            trendAlerts[index] = alert
+        }
+    }
+
+    /// The rules that keep the urgent-low safeguard satisfied (enabled lows at or below 60 mg/dL).
+    public var urgentLowRules: [AlertRule] {
+        rules(for: .low).filter { $0.isEnabled && $0.thresholdMgdL <= Self.urgentLowMgdL }
     }
 
     public func rules(for direction: AlertDirection) -> [AlertRule] {
