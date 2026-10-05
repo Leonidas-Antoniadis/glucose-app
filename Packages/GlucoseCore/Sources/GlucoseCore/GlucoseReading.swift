@@ -18,13 +18,16 @@ public struct GlucoseReading: Codable, Hashable, Sendable, Identifiable {
     public let timestamp: Date
     public let mgdL: Double
     public let source: Source
+    /// Uncalibrated sensor signal, kept so values can be recalculated after calibration.
+    public let raw: Double?
 
-    public init(sensorSerial: String, minuteIndex: Int, timestamp: Date, mgdL: Double, source: Source) {
+    public init(sensorSerial: String, minuteIndex: Int, timestamp: Date, mgdL: Double, source: Source, raw: Double? = nil) {
         self.sensorSerial = sensorSerial
         self.minuteIndex = minuteIndex
         self.timestamp = timestamp
         self.mgdL = mgdL
         self.source = source
+        self.raw = raw
     }
 }
 
