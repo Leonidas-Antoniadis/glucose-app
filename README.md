@@ -1,6 +1,6 @@
 # Glucose App
 
-A personal, **local-only** iPhone app for the FreeStyle Libre 2 Plus (EU) sensor. It reads glucose directly over Bluetooth and shows live values, trends, fully customizable alerts and statistics. Nothing is sent to Abbott or any cloud.
+A personal, **local-only** iPhone app for the FreeStyle Libre 2 Plus (EU) sensor. It reads glucose directly over Bluetooth and shows live values, trends, fully customizable alerts and statistics. Nothing is sent to any cloud.
 
 > **Not a medical device.** This is a personal project without regulatory clearance. Use it as a secondary display. Always confirm with an approved device before any treatment decision, and keep a backup (reader or fingerstick meter). Don't distribute builds to other people.
 
