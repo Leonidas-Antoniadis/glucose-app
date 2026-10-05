@@ -1,4 +1,4 @@
-# Generates the bundled alert sounds (WAV, 16-bit mono, 22.05 kHz, under 30 s as iOS requires).
+# Generates the bundled alert sounds (WAV, 16-bit mono, 22.05 kHz). Tunes are at most 5 s; alerts repeat them.
 # Voice clips use Windows text-to-speech; tunes are synthesized tones.
 # Usage (Windows PowerShell): powershell -ExecutionPolicy Bypass -File tools/generate-sounds.ps1
 
@@ -69,16 +69,16 @@ function New-LoudTune([object[]]$notes, [double]$seconds) {
 # Ultra loud low: rapid piercing beeps that alternate pitch, like a smoke alarm. Hard to sleep through.
 Write-Wav (Join-Path $out 'tune_alarm_loud_low.wav') (New-LoudTune @(
         @(3500, 0.07), @(0, 0.03), @(3500, 0.07), @(0, 0.03), @(3500, 0.07), @(0, 0.03), @(3500, 0.07), @(0, 0.08),
-        @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.18)) 29)
+        @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.03), @(4000, 0.07), @(0, 0.18)) 5)
 # Ultra loud high: fast high-pitched siren sweeping up and down.
-Write-Wav (Join-Path $out 'tune_alarm_loud_high.wav') (New-LoudTune @(@(2500, 3600, 0.25), @(3600, 2500, 0.25), @(0, 0.05)) 29)
+Write-Wav (Join-Path $out 'tune_alarm_loud_high.wav') (New-LoudTune @(@(2500, 3600, 0.25), @(3600, 2500, 0.25), @(0, 0.05)) 4.95)
 
 Write-Wav (Join-Path $out 'tune_chime.wav') (New-Tune @(@(880, 0.18), @(1175, 0.18), @(1568, 0.35), @(0, 0.6)) 2 0.7)
 # Loud alarms sound different for lows and highs, so you know which it is without looking.
 # Low: urgent, fast descending three-tone, repeated.
-Write-Wav (Join-Path $out 'tune_alarm_low.wav') (New-Tune @(@(1319, 0.14), @(988, 0.14), @(659, 0.22), @(0, 0.25)) 9 0.95)
+Write-Wav (Join-Path $out 'tune_alarm_low.wav') (New-Tune @(@(1319, 0.14), @(988, 0.14), @(659, 0.22), @(0, 0.25)) 6 0.95)
 # High: slower rising two-tone, like a siren.
-Write-Wav (Join-Path $out 'tune_alarm_high.wav') (New-Tune @(@(523, 0.35), @(784, 0.45), @(0, 0.4)) 6 0.9)
+Write-Wav (Join-Path $out 'tune_alarm_high.wav') (New-Tune @(@(523, 0.35), @(784, 0.45), @(0, 0.4)) 4 0.9)
 Write-Wav (Join-Path $out 'tune_pulse.wav') (New-Tune @(@(660, 0.12), @(0, 0.12)) 10 0.75)
 
 $voices = [ordered]@{
