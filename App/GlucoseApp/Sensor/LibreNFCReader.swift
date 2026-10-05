@@ -8,9 +8,13 @@ enum NFCReadError: LocalizedError {
     case unsupported(String)
     case cancelled
     case failed(String)
+    case undecodable
+    case notReady(String)
 
     var errorDescription: String? {
         switch self {
+        case .undecodable: return "This sensor's data couldn't be decoded, so it was not paired. Nothing on the sensor was changed and LibreLink keeps working. Share the raw captures to help fix this."
+        case .notReady(let state): return "The sensor can't be paired right now (state: \(state)). Nothing on the sensor was changed."
         case .unavailable: return "NFC isn't available. It needs an iPhone 7 or later and an app signed with NFC permission (paid Apple Developer account)."
         case .notLibre: return "That tag isn't a Libre sensor."
         case .unsupported(let detail): return "This sensor isn't supported: \(detail). Only European Libre 2 and Libre 2 Plus sensors work."
@@ -32,6 +36,9 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
         /// Response to the enable-streaming command (contains the BLE address).
         let streamingResponse: [UInt8]?
     }
+
+    /// Receives raw bytes as they are read (also when decoding later fails), for the capture log.
+    var onCapture: ((String, [UInt8]) -> Void)?
 
     private var continuation: CheckedContinuation<ScanResult, Error>?
     private var session: NFCTagReaderSession?
@@ -103,9 +110,25 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
                     for data in blocks { fram += data }
                     block += count
                 }
+                self.onCapture?("NFC uid", uid)
+                self.onCapture?("NFC patch", patchInfo)
+                self.onCapture?("NFC fram", fram)
 
                 var response: [UInt8]?
                 if enable {
+                    // Prove the sensor's data decodes before taking over its Bluetooth link.
+                    // If it doesn't, stop here: the sensor and LibreLink are left untouched.
+                    do {
+                        let decrypted = try Libre2Crypto.decryptFRAM(uid: uid, patchInfo: patchInfo, data: fram)
+                        let decoded = try LibreFRAM(decrypted: decrypted)
+                        guard decoded.state == .active || decoded.state == .warmingUp else {
+                            throw NFCReadError.notReady(decoded.state.description)
+                        }
+                    } catch let error as NFCReadError {
+                        throw error
+                    } catch {
+                        throw NFCReadError.undecodable
+                    }
                     let parameters = try Libre2Crypto.enableStreamingParameters(uid: uid, patchInfo: patchInfo)
                     response = Array(try await libreTag.customCommand(
                         requestFlags: .highDataRate, customCommandCode: Int(Libre2Crypto.enableStreamingCommand),

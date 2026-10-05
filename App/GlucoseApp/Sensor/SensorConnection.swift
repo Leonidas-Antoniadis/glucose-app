@@ -68,6 +68,9 @@ final class SensorConnection {
         self.stores = stores
         record = stores.sensor.load()
         ble.knownPeripheralID = record?.peripheralIdentifier
+        nfc.onCapture = { [stores] kind, bytes in
+            stores.appendCapture("\(ISO8601DateFormatter().string(from: Date())) | \(kind) | \(bytes.hexString)")
+        }
         ble.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
         }
@@ -126,9 +129,6 @@ final class SensorConnection {
         defer { isBusy = false }
         do {
             let scan = try await nfc.scan(enableStreaming: true, allowUnverified: allowUnverifiedTypes)
-            capture("NFC uid", scan.uid)
-            capture("NFC patch", scan.patchInfo)
-            capture("NFC fram", scan.fram)
             if let response = scan.streamingResponse { capture("NFC enable", response) }
 
             let fram = try decodeFRAM(scan)
@@ -168,7 +168,6 @@ final class SensorConnection {
         defer { isBusy = false }
         do {
             let scan = try await nfc.scan(enableStreaming: false, allowUnverified: allowUnverifiedTypes)
-            capture("NFC fram", scan.fram)
             guard scan.uid == record.uid else {
                 throw LibreProtocolError.unsupportedSensor("this is a different sensor; pair it instead")
             }
