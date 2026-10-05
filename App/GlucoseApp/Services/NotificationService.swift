@@ -10,6 +10,9 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private static let missingDataPrefix = "missing-data-"
     private static let sensorPrefix = "sensor-reminder-"
     private static let signaturePrefix = "signature-"
+    private static let demoPrefix = "demo-alert-"
+    /// iOS keeps at most 64 pending notifications; leave room for the others.
+    static let maxDemoAlerts = 30
 
     /// Called when the user taps Snooze on an alert notification.
     var onSnooze: (@MainActor (UUID) -> Void)?
@@ -59,6 +62,23 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// `alarmPlaying`: the app is already playing the sound itself, so the notification stays quiet.
     func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false) {
+        center.add(UNNotificationRequest(identifier: UUID().uuidString,
+                                         content: content(for: event, unit: unit, alarmPlaying: alarmPlaying), trigger: nil))
+    }
+
+    /// Demo only: the alerts the simulated sensor will raise while iOS keeps the app suspended.
+    func scheduleDemoAlerts(_ events: [AlertEvent], unit: GlucoseUnit) {
+        cancelDemoAlerts()
+        for (index, event) in events.prefix(Self.maxDemoAlerts).enumerated() {
+            schedule(id: "\(Self.demoPrefix)\(index)", content: content(for: event, unit: unit, alarmPlaying: false), at: event.date)
+        }
+    }
+
+    func cancelDemoAlerts() {
+        center.removePendingNotificationRequests(withIdentifiers: (0..<Self.maxDemoAlerts).map { "\(Self.demoPrefix)\($0)" })
+    }
+
+    private func content(for event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = event.ruleName
         let value = unit.format(mgdL: event.valueMgdL, includeSymbol: true)
@@ -79,7 +99,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         } else {
             content.interruptionLevel = event.sound == .silent && !event.isCritical ? .active : .timeSensitive
         }
-        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        return content
     }
 
     func post(title: String, body: String, sound: SoundStyle = .tune(name: "chime")) {

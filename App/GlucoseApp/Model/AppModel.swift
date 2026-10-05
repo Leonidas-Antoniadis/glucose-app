@@ -144,6 +144,7 @@ final class AppModel {
 
     func activateSource() {
         demoTask?.cancel()
+        notifications.cancelDemoAlerts()
         engine = AlertEngine(ruleSet: settings.ruleSet)
         switch settings.dataSource {
         case .demo:
@@ -263,9 +264,11 @@ final class AppModel {
 
         // Don't alert on old values that arrive late (backfill after a long gap).
         if latest.source == .simulated || Date().timeIntervalSince(latest.timestamp) < 10 * 60 {
-            deliver(engine.process(latest))
+            // A demo in the background already has its alerts scheduled (see scheduleDemoAlertsAhead).
+            deliver(engine.process(latest), notify: !(demoRunsAhead && !isActive))
         }
-        if !isDemo || settings.demoSpeed == .realTime {
+        // In the background the demo stops when iOS suspends the app, which isn't missing data.
+        if !isDemo || (settings.demoSpeed == .realTime && isActive) {
             let warmUp = isDemo ? nil : sensor.record?.warmUpEndsAt
             notifications.scheduleMissingData(settings.missingData.fireDates(lastReading: latest.timestamp, warmUpEnds: warmUp),
                                               config: settings.missingData)
@@ -274,9 +277,9 @@ final class AppModel {
                         liveActivityEnabled: settings.liveActivity)
     }
 
-    private func deliver(_ events: [AlertEvent]) {
+    private func deliver(_ events: [AlertEvent], notify: Bool = true) {
         guard !events.isEmpty else { return }
-        for event in events {
+        for event in events where notify {
             let alarmPlaying = playAlarmIfNeeded(event)
             notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying)
             if settings.speakValues, isActive, !alarmPlaying {
@@ -287,6 +290,39 @@ final class AppModel {
         if recentEvents.count > 50 {
             recentEvents.removeLast(recentEvents.count - 50)
         }
+    }
+
+    // MARK: Demo while the phone is locked
+
+    /// A real-time demo whose alerts are scheduled ahead while the app is off screen.
+    private var demoRunsAhead: Bool { isDemo && settings.demoSpeed == .realTime && demoTask != nil }
+
+    /// iOS suspends the app soon after it leaves the screen, and the demo has no Bluetooth to wake it.
+    /// The simulated sensor is predictable, so the alerts it will raise are worked out now and scheduled.
+    private func scheduleDemoAlertsAhead() {
+        guard demoRunsAhead else { return }
+        notifications.cancelMissingData()
+        var future = engine
+        var events: [AlertEvent] = []
+        var minute = demoMinute
+        while events.count < NotificationService.maxDemoAlerts, minute < demoMinute + 12 * 60 {
+            events += future.process(demoSensor.reading(atMinute: minute))
+            minute += 1
+        }
+        notifications.scheduleDemoAlerts(events, unit: unit)
+    }
+
+    /// Back on screen: drop the scheduled demo alerts and catch up on the minutes missed while suspended.
+    /// The scheduled notifications already announced those minutes' alerts, so they're only listed.
+    private func catchUpDemo() {
+        notifications.cancelDemoAlerts()
+        guard demoRunsAhead else { return }
+        let current = Int(Date().timeIntervalSince(demoSensor.startedAt) / 60)
+        guard current > demoMinute else { return }
+        let missed = demoSensor.readings(minutes: demoMinute..<current)
+        demoMinute = current
+        ingest(missed, live: false)
+        deliver(missed.flatMap { engine.process($0) }, notify: false)
     }
 
     /// A Critical alert plays from the app while iOS won't let its notification through Silent and Focus.
@@ -486,6 +522,7 @@ final class AppModel {
             if wasInactive {
                 // Opening the app (or tapping the notification) means the alarm was heard.
                 alarm.stop()
+                catchUpDemo()
             }
             if wasInactive, settings.biometricLock, isLocked {
                 Task { await unlock() }
@@ -501,6 +538,7 @@ final class AppModel {
         case .background:
             isActive = false
             if settings.biometricLock { isLocked = true }
+            scheduleDemoAlertsAhead()
             if !settings.runInBackground, started, !isDemo {
                 // Saves battery: no Bluetooth while closed, so no alerts and no stale Lock Screen value.
                 pausedInBackground = true
