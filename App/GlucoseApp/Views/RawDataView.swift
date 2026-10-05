@@ -6,9 +6,51 @@ import LibreProtocol
 struct RawDataView: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
+    @State private var exportURL: URL?
 
     var body: some View {
+        @Bindable var sensor = sensor
+        @Bindable var model = model
         List {
+            Section {
+                Toggle(isOn: $sensor.savesNextPacket) {
+                    Label(sensor.savesNextPacket ? "Waiting for the next packet…" : "Save the next Bluetooth packet",
+                          systemImage: "dot.radiowaves.left.and.right")
+                }
+                Toggle(isOn: $sensor.savesNextNFC) {
+                    Label(sensor.savesNextNFC ? "Waiting for the next NFC read…" : "Save the next NFC read",
+                          systemImage: "wave.3.right")
+                }
+                ForEach(sensor.saved) { capture in
+                    NavigationLink {
+                        if capture.kind == .bluetooth {
+                            PacketDetailView(record: sensor.packetRecord(from: capture), unit: model.unit, savedNote: capture.reason)
+                        } else {
+                            NFCDetailView(record: sensor.nfcRecord(from: capture), savedNote: capture.reason)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(capture.title, systemImage: capture.kind == .bluetooth ? "dot.radiowaves.left.and.right" : "wave.3.right")
+                            Text("\(capture.date.formatted(date: .abbreviated, time: .standard)) · \(capture.reason)")
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                    }
+                }
+                .onDelete { offsets in
+                    sensor.deleteSaved(Set(offsets.map { sensor.saved[$0].id }))
+                }
+                if !sensor.saved.isEmpty {
+                    Button("Prepare file to share", systemImage: "doc.text") { exportURL = sensor.exportSaved() }
+                    if let exportURL {
+                        ShareLink(item: exportURL) { Label("Share saved data", systemImage: "square.and.arrow.up") }
+                    }
+                }
+            } header: {
+                Text("Kept on this phone (\(sensor.saved.count))")
+            } footer: {
+                Text("Only what you choose is kept, plus failed pairings (needed to fix decoding). The list below is temporary and clears when the app restarts. Saved data contains your sensor's ID: share it only with people you trust.")
+            }
+
             Section {
                 Text("Every minute the sensor sends 46 bytes over Bluetooth. The first 2 are plain and seed the decryption; the other 44 are encrypted with a key derived from the sensor's ID. Decrypted, they hold 10 readings, the sensor's age and a checksum. Tap a packet to see each byte.")
                     .font(.footnote)
@@ -20,7 +62,7 @@ struct RawDataView: View {
                 }
             }
 
-            Section("NFC reads") {
+            Section("Recent NFC reads") {
                 if sensor.nfcRecords.isEmpty {
                     Text("No NFC reads yet. Pair or scan a sensor.").foregroundStyle(.secondary)
                 }
@@ -41,7 +83,7 @@ struct RawDataView: View {
                 }
             }
 
-            Section("Bluetooth packets (newest first)") {
+            Section("Recent Bluetooth packets (last \(SensorConnection.packetLogLimit))") {
                 if sensor.packets.isEmpty {
                     Text("No packets yet.").foregroundStyle(.secondary)
                 }
@@ -51,7 +93,16 @@ struct RawDataView: View {
                     } label: {
                         PacketRow(record: packet, unit: model.unit)
                     }
+                    .swipeActions(edge: .leading) {
+                        Button("Keep", systemImage: "tray.and.arrow.down") { sensor.keep(packet) }.tint(.blue)
+                    }
                 }
+            }
+
+            Section {
+                Toggle("Also log every packet to a file", isOn: $model.settings.recordAllRawData)
+            } footer: {
+                Text("Off by default. Only turn on while debugging a problem: the file grows by about 150 KB a day.")
             }
         }
         .navigationTitle("Sensor data")
@@ -148,14 +199,18 @@ struct HexGrid: View {
 }
 
 struct PacketDetailView: View {
+    @Environment(SensorConnection.self) private var sensor
     let record: SensorConnection.PacketRecord
     let unit: GlucoseUnit
+    /// Set when showing a saved capture (why it was kept).
+    var savedNote: String? = nil
 
     var body: some View {
         List {
             Section {
                 MetricRow(label: "Received", value: record.date.formatted(date: .abbreviated, time: .standard))
                 MetricRow(label: "Source", value: record.isSimulated ? "Simulated (demo)" : "Bluetooth")
+                if let savedNote { MetricRow(label: "Kept", value: savedNote) }
                 if let packet = record.packet {
                     MetricRow(label: "Sensor age", value: "\(packet.ageMinutes) min (\(String(format: "%.1f", Double(packet.ageMinutes) / 1440)) days)")
                 }
@@ -184,6 +239,15 @@ struct PacketDetailView: View {
                     Text("3. Readings in this packet")
                 } footer: {
                     Text("Each reading is 4 bytes: bits 0-13 raw glucose signal, 14-25 raw temperature, 26-30 temperature adjustment, 31 its sign. \"Estimate\" is raw ÷ 8.5; \"Value\" uses your calibration.")
+                }
+            }
+        }
+        .toolbar {
+            if savedNote == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    let kept = sensor.isKept(bytes: record.encrypted, date: record.date)
+                    Button(kept ? "Kept" : "Keep", systemImage: kept ? "checkmark" : "tray.and.arrow.down") { sensor.keep(record) }
+                        .disabled(kept)
                 }
             }
         }
@@ -236,6 +300,8 @@ struct ReadingTable: View {
 struct NFCDetailView: View {
     @Environment(AppModel.self) private var model
     let record: SensorConnection.NFCRecord
+    @Environment(SensorConnection.self) private var sensor
+    var savedNote: String? = nil
 
     var body: some View {
         List {
@@ -285,6 +351,15 @@ struct NFCDetailView: View {
             Section("As read over NFC (encrypted)") {
                 HexGrid(bytes: record.encrypted, regions: [LibreLayout.Region(range: 0..<record.encrypted.count, name: "Encrypted",
                                                                               detail: "43 blocks of 8 bytes, each encrypted with its own key")])
+            }
+        }
+        .toolbar {
+            if savedNote == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    let kept = sensor.isKept(bytes: record.encrypted, date: record.date)
+                    Button(kept ? "Kept" : "Keep", systemImage: kept ? "checkmark" : "tray.and.arrow.down") { sensor.keep(record) }
+                        .disabled(kept)
+                }
             }
         }
         .navigationTitle("NFC read")

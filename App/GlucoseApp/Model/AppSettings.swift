@@ -45,12 +45,14 @@ struct AppSettings: Codable, Hashable {
     var bluetoothAlert = true
     /// Lets the app try the Libre 2 EU protocol on sensors it doesn't recognize.
     var allowUnverifiedSensorTypes = false
+    /// Write every packet to the capture log (normally only packets you save are kept).
+    var recordAllRawData = false
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case unit, ruleSet, missingData, dataSource, demoSpeed, onboardingDone, biometricLock
-        case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes
+        case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData
     }
 
     init(from decoder: Decoder) throws {
@@ -68,5 +70,6 @@ struct AppSettings: Codable, Hashable {
         batteryAlert = try c.decodeIfPresent(Bool.self, forKey: .batteryAlert) ?? d.batteryAlert
         bluetoothAlert = try c.decodeIfPresent(Bool.self, forKey: .bluetoothAlert) ?? d.bluetoothAlert
         allowUnverifiedSensorTypes = try c.decodeIfPresent(Bool.self, forKey: .allowUnverifiedSensorTypes) ?? d.allowUnverifiedSensorTypes
+        recordAllRawData = try c.decodeIfPresent(Bool.self, forKey: .recordAllRawData) ?? d.recordAllRawData
     }
 }

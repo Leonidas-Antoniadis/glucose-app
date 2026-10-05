@@ -54,6 +54,8 @@ final class SensorConnection {
         let readings: [GlucoseReading]
         let error: String?
         let isSimulated: Bool
+        var uid: [UInt8] = []
+        var patchInfo: [UInt8] = []
     }
 
     /// One NFC read as received and as decoded.
@@ -86,6 +88,14 @@ final class SensorConnection {
     /// A made-up sensor used in demo mode, so the inspector shows realistic bytes.
     private(set) var demoRecord: LibreSensorRecord?
     var allowUnverifiedTypes = false
+    /// Packets and NFC reads kept on the phone (by you, or failed pairings).
+    private(set) var saved: [SavedCapture] = []
+    /// Keep the next Bluetooth packet that arrives.
+    var savesNextPacket = false
+    /// Keep the next NFC read.
+    var savesNextNFC = false
+    /// Also append every packet to the capture log file.
+    var recordAllRawData = false
 
     @ObservationIgnored var onReadings: (@MainActor ([GlucoseReading], Bool) -> Void)?
     @ObservationIgnored var onEvent: (@MainActor (Event) -> Void)?
@@ -104,10 +114,8 @@ final class SensorConnection {
         self.stores = stores
         record = stores.sensor.load()
         history = stores.sensorHistory.load() ?? SensorHistory()
+        saved = stores.savedCaptures.load() ?? []
         ble.knownPeripheralID = record?.peripheralIdentifier
-        nfc.onCapture = { [stores] kind, bytes in
-            stores.appendCapture("\(ISO8601DateFormatter().string(from: Date())) | \(kind) | \(bytes.hexString)")
-        }
         ble.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
         }
@@ -175,13 +183,9 @@ final class SensorConnection {
             guard fram.state == .active || fram.state == .warmingUp else {
                 throw LibreProtocolError.unsupportedSensor("sensor state is \(fram.state.description)")
             }
-            var newRecord = LibreSensorRecord(uid: scan.uid, patchInfo: scan.patchInfo, ageMinutes: fram.ageMinutes,
-                                              maxLifeMinutes: fram.maxLifeMinutes, now: Date())
-            // Re-pairing the same sensor keeps its calibration.
-            if let old = record, old.uid == scan.uid {
-                newRecord.calibrationPoints = old.calibrationPoints
-                newRecord.calibration = Calibration.fit(old.calibrationPoints, now: Date())
-            }
+            // Re-pairing the same sensor (e.g. after LibreLink took it back) keeps its calibration.
+            let newRecord = LibreSensorRecord.paired(uid: scan.uid, patchInfo: scan.patchInfo, ageMinutes: fram.ageMinutes,
+                                                     maxLifeMinutes: fram.maxLifeMinutes, now: Date(), previous: record)
             record = newRecord
             save()
             history.record(SensorHistoryEntry(
@@ -238,12 +242,16 @@ final class SensorConnection {
         do {
             let decrypted = try Libre2Crypto.decryptFRAM(uid: scan.uid, patchInfo: scan.patchInfo, data: scan.fram)
             let fram = try LibreFRAM(decrypted: decrypted)
+            _ = nfc.takeLastRead()
             appendNFC(NFCRecord(date: Date(), uid: scan.uid, patchInfo: scan.patchInfo, encrypted: scan.fram, decrypted: decrypted,
                                 fram: fram, streamingResponse: scan.streamingResponse, error: nil, isSimulated: false))
             return fram
         } catch {
+            _ = nfc.takeLastRead()
             appendNFC(NFCRecord(date: Date(), uid: scan.uid, patchInfo: scan.patchInfo, encrypted: scan.fram, decrypted: nil,
                                 fram: nil, streamingResponse: scan.streamingResponse, error: "\(error)", isSimulated: false))
+            keep(SavedCapture(date: Date(), kind: .nfc, uid: scan.uid, patchInfo: scan.patchInfo, bytes: scan.fram,
+                              enableResponse: scan.streamingResponse, isSimulated: false, reason: "Decoding failed: \(error)"))
             throw error
         }
     }
@@ -256,6 +264,9 @@ final class SensorConnection {
         appendNFC(NFCRecord(date: Date(), uid: raw.uid, patchInfo: raw.patchInfo, encrypted: raw.fram, decrypted: decrypted,
                             fram: decrypted.flatMap { try? LibreFRAM(decrypted: $0) }, streamingResponse: nil,
                             error: message, isSimulated: false))
+        // Failed reads are always kept: they're what's needed to fix decoding for this sensor.
+        keep(SavedCapture(date: Date(), kind: .nfc, uid: raw.uid, patchInfo: raw.patchInfo, bytes: raw.fram,
+                          enableResponse: nil, isSimulated: false, reason: "Read failed: \(message)"))
     }
 
     private func importFRAM(_ fram: LibreFRAM, record: LibreSensorRecord) {
@@ -467,14 +478,95 @@ final class SensorConnection {
 
     // MARK: Helpers
 
-    private func appendPacket(_ packet: PacketRecord) {
+    private func appendPacket(_ incoming: PacketRecord) {
+        var packet = incoming
+        if let source = packet.isSimulated ? demoRecord : record {
+            packet.uid = source.uid
+            packet.patchInfo = source.patchInfo
+        }
         packets.insert(packet, at: 0)
         if packets.count > Self.packetLogLimit { packets.removeLast(packets.count - Self.packetLogLimit) }
+        if savesNextPacket {
+            savesNextPacket = false
+            keep(packet)
+        }
     }
 
-    private func appendNFC(_ record: NFCRecord) {
-        nfcRecords.insert(record, at: 0)
+    private func appendNFC(_ read: NFCRecord) {
+        nfcRecords.insert(read, at: 0)
         if nfcRecords.count > 20 { nfcRecords.removeLast(nfcRecords.count - 20) }
+        if savesNextNFC {
+            savesNextNFC = false
+            keep(read)
+        }
+    }
+
+    // MARK: Saved captures
+
+    func keep(_ packet: PacketRecord, reason: String = "Saved by you") {
+        keep(SavedCapture(date: packet.date, kind: .bluetooth, uid: packet.uid, patchInfo: packet.patchInfo,
+                          bytes: packet.encrypted, enableResponse: nil, isSimulated: packet.isSimulated, reason: reason))
+    }
+
+    func keep(_ read: NFCRecord, reason: String = "Saved by you") {
+        keep(SavedCapture(date: read.date, kind: .nfc, uid: read.uid, patchInfo: read.patchInfo, bytes: read.encrypted,
+                          enableResponse: read.streamingResponse, isSimulated: read.isSimulated, reason: reason))
+    }
+
+    private func keep(_ capture: SavedCapture) {
+        // The same bytes saved twice are kept once.
+        guard !saved.contains(where: { $0.bytes == capture.bytes && $0.date == capture.date }) else { return }
+        saved.insert(capture, at: 0)
+        try? stores.savedCaptures.save(saved)
+        log("Saved \(capture.title.lowercased())")
+    }
+
+    func isKept(bytes: [UInt8], date: Date) -> Bool {
+        saved.contains { $0.bytes == bytes && $0.date == date }
+    }
+
+    func deleteSaved(_ ids: Set<UUID>) {
+        saved.removeAll { ids.contains($0.id) }
+        try? stores.savedCaptures.save(saved)
+    }
+
+    /// Writes the saved captures to a text file for sharing.
+    func exportSaved() -> URL? {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Libre captures.txt")
+        do {
+            try SavedCapture.exportText(saved).write(to: url, atomically: true, encoding: .utf8)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    /// Decodes a saved packet again, for the detail view.
+    func packetRecord(from capture: SavedCapture) -> PacketRecord {
+        let decrypted = try? Libre2Crypto.decryptBLE(uid: capture.uid, packet: capture.bytes)
+        let parsed = decrypted.flatMap { try? LibreBLEPacket(decrypted: $0) }
+        var readings: [GlucoseReading] = []
+        if let parsed {
+            var decoder = LibreSensorRecord(uid: capture.uid, patchInfo: capture.patchInfo, ageMinutes: parsed.ageMinutes,
+                                            maxLifeMinutes: 0, now: capture.date)
+            if let record, record.uid == capture.uid { decoder.calibration = record.calibration }
+            readings = decoder.glucoseReadings(from: parsed.trend + parsed.history, liveSource: .bluetooth)
+        }
+        var packet = PacketRecord(date: capture.date, encrypted: capture.bytes, decrypted: decrypted, packet: parsed,
+                                  readings: readings, error: parsed == nil ? "Doesn't decode with this sensor ID" : nil,
+                                  isSimulated: capture.isSimulated)
+        packet.uid = capture.uid
+        packet.patchInfo = capture.patchInfo
+        return packet
+    }
+
+    /// Decodes a saved NFC read again, for the detail view.
+    func nfcRecord(from capture: SavedCapture) -> NFCRecord {
+        let decrypted = try? Libre2Crypto.decryptFRAM(uid: capture.uid, patchInfo: capture.patchInfo, data: capture.bytes)
+        let fram = decrypted.flatMap { try? LibreFRAM(decrypted: $0) }
+        return NFCRecord(date: capture.date, uid: capture.uid, patchInfo: capture.patchInfo, encrypted: capture.bytes,
+                         decrypted: decrypted, fram: fram, streamingResponse: capture.enableResponse,
+                         error: fram == nil ? capture.reason : nil, isSimulated: capture.isSimulated)
     }
 
     private func save() {
@@ -499,6 +591,7 @@ final class SensorConnection {
     }
 
     private func capture(_ kind: String, _ bytes: [UInt8]) {
+        guard recordAllRawData else { return }
         stores.appendCapture("\(ISO8601DateFormatter().string(from: Date())) | \(kind) | \(bytes.hexString)")
     }
 }

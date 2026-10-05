@@ -35,6 +35,20 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
         self.pairedAt = now
     }
 
+    /// The record after an NFC pairing. Pairing the *same* sensor again (for example after
+    /// LibreLink took it back) keeps its calibration; the unlock counter and Bluetooth
+    /// peripheral start over because the sensor was re-enabled.
+    public static func paired(uid: [UInt8], patchInfo: [UInt8], ageMinutes: Int, maxLifeMinutes: Int, now: Date,
+                              previous: LibreSensorRecord?) -> LibreSensorRecord {
+        var record = LibreSensorRecord(uid: uid, patchInfo: patchInfo, ageMinutes: ageMinutes, maxLifeMinutes: maxLifeMinutes, now: now)
+        if let previous, previous.uid == uid {
+            record.calibrationPoints = previous.calibrationPoints
+            record.calibration = Calibration.fit(previous.calibrationPoints, now: now)
+            record.pairedAt = previous.pairedAt
+        }
+        return record
+    }
+
     public var expiresAt: Date {
         activatedAt.addingTimeInterval(Double(maxLifeMinutes) * 60)
     }

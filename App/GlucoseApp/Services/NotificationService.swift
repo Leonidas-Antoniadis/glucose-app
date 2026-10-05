@@ -94,6 +94,18 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// "Sensor ready" when a newly started sensor finishes its 60-minute warm-up.
+    func scheduleWarmUpDone(at date: Date) {
+        center.removePendingNotificationRequests(withIdentifiers: ["sensor-warmup"])
+        guard date > Date() else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Sensor ready"
+        content.body = "Warm-up is finished. Glucose readings and alerts start now. Add a fingerstick to calibrate."
+        content.sound = SoundCatalog.notificationSound(for: .tune(name: "chime"), critical: false, volume: 1)
+        content.interruptionLevel = .timeSensitive
+        schedule(id: "sensor-warmup", content: content, at: date)
+    }
+
     /// Warns before a sideloaded app's signature expires (after that the app won't open or alert).
     func scheduleSignatureReminders(expiry: Date?) {
         center.removePendingNotificationRequests(withIdentifiers: (0..<2).map { "\(Self.signaturePrefix)\($0)" })

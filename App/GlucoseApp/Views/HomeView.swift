@@ -55,10 +55,27 @@ struct StatusBanners: View {
                        color: .red)
             }
             if !model.isDemo {
-                if model.isStale, let latest = model.latest {
-                    Banner(systemImage: "antenna.radiowaves.left.and.right.slash",
-                           text: "No new reading since \(latest.timestamp.formatted(date: .omitted, time: .shortened)). \(sensor.status.title).",
-                           color: .red)
+                if model.isStale, let latest = model.latest, sensor.record != nil {
+                    ActionBanner(
+                        systemImage: "antenna.radiowaves.left.and.right.slash",
+                        text: noDataText(since: latest.timestamp),
+                        color: .red,
+                        actions: [
+                            ("Scan sensor", { _ = Task { await sensor.scanHistory() } }),
+                            ("Pair again", { _ = Task { await sensor.pair() } }),
+                        ]
+                    )
+                } else if let gap = model.readingGap {
+                    let span = "\(gap.start.formatted(date: .omitted, time: .shortened))–\(gap.end.formatted(date: .omitted, time: .shortened))"
+                    if model.canFillWithNFC(gap) {
+                        ActionBanner(systemImage: "chart.line.downtrend.xyaxis",
+                                     text: "Missing readings \(span). Scan the sensor to fill the gap from its 8-hour memory.",
+                                     color: .orange,
+                                     actions: [("Scan sensor", { _ = Task { await sensor.scanHistory() } })])
+                    } else {
+                        Banner(systemImage: "chart.line.downtrend.xyaxis",
+                               text: "Missing readings \(span). The sensor only keeps 8 hours, so this gap can't be filled.")
+                    }
                 }
                 if let record = sensor.record {
                     if !record.calibration.isCalibrated {
@@ -74,6 +91,45 @@ struct StatusBanners: View {
                 Banner(systemImage: "xmark.octagon", text: error, color: .red)
             }
         }
+    }
+
+    /// Explains the likely causes when readings stop.
+    private func noDataText(since date: Date) -> String {
+        let time = date.formatted(date: .omitted, time: .shortened)
+        switch sensor.status {
+        case .bluetoothOff:
+            return "No reading since \(time): Bluetooth is off. Turn it on to reconnect."
+        case .ended:
+            return "No reading since \(time): the sensor has ended."
+        default:
+            return "No reading since \(time). Keep the phone within a few meters of the sensor. If you scanned the sensor with LibreLink or the reader, it now sends to that app: tap Pair again to take it back. Scan to fill the gap."
+        }
+    }
+}
+
+/// A banner with buttons.
+struct ActionBanner: View {
+    let systemImage: String
+    let text: String
+    var color: Color = .orange
+    let actions: [(String, () -> Void)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(text, systemImage: systemImage)
+                .font(.subheadline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                    Button(action.0, action: action.1)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(color)
+                }
+            }
+        }
+        .padding(12)
+        .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 

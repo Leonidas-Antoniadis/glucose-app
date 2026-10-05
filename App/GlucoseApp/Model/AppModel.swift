@@ -55,6 +55,7 @@ final class AppModel {
         self.logbook = stores.logbook.load() ?? []
         self.fingersticks = stores.fingersticks.load() ?? []
         sensor.allowUnverifiedTypes = settings.allowUnverifiedSensorTypes
+        sensor.recordAllRawData = settings.recordAllRawData
 
         sensor.onReadings = { [weak self] readings, live in self?.ingest(readings, live: live) }
         sensor.onEvent = { [weak self] event in self?.handleSensorEvent(event) }
@@ -77,6 +78,21 @@ final class AppModel {
     var isStale: Bool {
         guard let latest else { return true }
         return !isDemo && Date().timeIntervalSince(latest.timestamp) > 10 * 60
+    }
+
+    /// Missing readings in the last 24 hours, e.g. after the phone was out of range.
+    /// "No data right now" isn't included; the stale-value banner covers that.
+    var readingGap: DateInterval? {
+        guard !isDemo, sensor.record != nil else { return nil }
+        let now = Date()
+        guard let gap = ReadingPipeline.recentGap(in: readings, now: now, minimumMinutes: 20, lookbackHours: 24),
+              gap.end < now.addingTimeInterval(-60) else { return nil }
+        return gap
+    }
+
+    /// The sensor keeps 8 hours of history, so a gap that started within that window can be filled by NFC.
+    func canFillWithNFC(_ gap: DateInterval) -> Bool {
+        gap.start > Date().addingTimeInterval(-8 * 3600 + 15 * 60)
     }
 
     func readings(lastHours hours: Double) -> [GlucoseReading] {
@@ -162,6 +178,9 @@ final class AppModel {
         guard let end = readings.last?.timestamp else { return }
         func ago(_ minutes: Double) -> Date { end.addingTimeInterval(-minutes * 60) }
         sensor.seedSampleHistory(now: end)
+        if let packet = sensor.packets.first {
+            sensor.keep(packet, reason: "Saved by you (example)")
+        }
         logbook = [
             LogEntry(date: ago(25), kind: .insulin(units: 4, type: .rapid), text: "Correction"),
             LogEntry(date: ago(95), kind: .exercise(minutes: 40), text: "Walk"),
@@ -264,6 +283,9 @@ final class AppModel {
     private func handleSensorEvent(_ event: SensorConnection.Event) {
         switch event {
         case .paired:
+            if let record = sensor.record {
+                notifications.scheduleWarmUpDone(at: record.warmUpEndsAt)
+            }
             if settings.dataSource != .libre {
                 settings.dataSource = .libre
                 settingsChanged()
@@ -296,6 +318,7 @@ final class AppModel {
             engine.ruleSet = settings.ruleSet
         }
         sensor.allowUnverifiedTypes = settings.allowUnverifiedSensorTypes
+        sensor.recordAllRawData = settings.recordAllRawData
         if old.dataSource != settings.dataSource || old.demoSpeed != settings.demoSpeed {
             activateSource()
         }

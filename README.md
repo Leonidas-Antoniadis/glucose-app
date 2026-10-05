@@ -92,7 +92,24 @@ For family or anyone not near your computer, see [TESTFLIGHT.md](TESTFLIGHT.md).
 3. Add a **fingerstick** when glucose is steady, and at least once a day. Until then values are rough estimates (raw ÷ 8.5).
 4. Add some fingersticks *without* "Use to calibrate" to measure accuracy (MARD).
 
-The protocol follows community reverse-engineering and is verified here only with synthetic data. If pairing or decoding fails, use **Sensor → Share raw sensor captures** and keep the file private: it contains your sensor's ID.
+The protocol follows community reverse-engineering and is verified here only with synthetic data. Before taking over a sensor, the app checks that its data decodes; if it doesn't, nothing on the sensor changes and LibreLink keeps working. Failed reads are kept under **Sensor → Raw sensor data** so they can be shared to fix decoding. Keep that file private: it contains your sensor's ID.
+
+### Common situations
+
+| Situation | What happens |
+|---|---|
+| Taking over a sensor that's already running | No new warm-up. Pairing imports the last 8 hours right away; live readings start within 1-2 minutes. Add a fingerstick soon, since values are estimates until calibrated. |
+| Pairing a sensor that's still warming up | Readings start after its first 60 minutes, and a "Sensor ready" notification arrives then. |
+| Alerts in both apps? | No. The sensor streams to one app. After pairing here, LibreLink's alarms stop for that sensor. |
+| Going back to LibreLink | Scan the sensor with LibreLink; it usually takes the sensor back (not guaranteed). This app then shows "No reading since …" with a **Pair again** button. |
+| Scanning again while connected | Safe: it only reads the 8-hour history, fills gaps and doesn't disturb the Bluetooth link. |
+| Pairing the same sensor again | Allowed; calibration is kept. |
+| Phone left out of range | It reconnects by itself when you're back. Each Bluetooth packet only covers the last ~45 minutes, so a banner offers an NFC scan to fill longer gaps (the sensor keeps 8 hours). |
+| Phone restarted | iOS only reconnects after the app has been opened once; the scheduled "No glucose data" alert reminds you. |
+
+### Raw sensor data
+
+**Sensor → Raw sensor data** shows each Bluetooth packet and NFC read as received, decrypted and decoded, with bytes colored by meaning. Recent packets are kept only in memory. To keep one on the phone, turn on **Save the next Bluetooth packet** (or NFC read), or swipe a packet and tap **Keep**. Kept data can be shared as a text file.
 
 ## Alert behaviour
 

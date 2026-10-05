@@ -69,6 +69,22 @@ public enum ReadingPipeline {
         return result
     }
 
+    /// The most recent stretch without readings that's longer than `minimumMinutes`, looking back
+    /// `lookbackHours` from `now`. A gap that reaches up to `now` counts too (data has stopped).
+    public static func recentGap(in readings: [GlucoseReading], now: Date, minimumMinutes: Double = 20,
+                                 lookbackHours: Double = 24) -> DateInterval? {
+        let start = now.addingTimeInterval(-lookbackHours * 3600)
+        let times = readings.map(\.timestamp).filter { $0 >= start && $0 <= now }.sorted()
+        guard let last = times.last else { return nil }
+        if now.timeIntervalSince(last) > minimumMinutes * 60 {
+            return DateInterval(start: last, end: now)
+        }
+        for (earlier, later) in zip(times, times.dropFirst()).reversed() where later.timeIntervalSince(earlier) > minimumMinutes * 60 {
+            return DateInterval(start: earlier, end: later)
+        }
+        return nil
+    }
+
     private static func priority(of source: GlucoseReading.Source) -> Int {
         switch source {
         case .bluetooth: return 3
