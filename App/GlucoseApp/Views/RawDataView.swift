@@ -89,7 +89,7 @@ struct PacketRow: View {
                 Text("raw \(latest.raw) → \(unit.format(mgdL: reading.mgdL, includeSymbol: true))")
                     .font(.caption.monospaced())
             }
-            Text(record.encrypted.prefix(16).hexString + " …")
+            Text(Array(record.encrypted.prefix(16)).hexString + " …")
                 .font(.caption2.monospaced())
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
