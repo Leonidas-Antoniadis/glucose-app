@@ -1,6 +1,6 @@
 import SwiftUI
-import Charts
 import GlucoseCore
+import LibreProtocol
 
 struct HomeView: View {
     @Environment(AppModel.self) private var model
@@ -9,38 +9,86 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 16) {
+                    StatusBanners()
                     CurrentValueCard()
                     Picker("Chart range", selection: $hours) {
                         ForEach([3.0, 6, 12, 24], id: \.self) { Text("\(Int($0)) h").tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    GlucoseChart(readings: model.readings(lastHours: hours), unit: model.unit)
+                    GlucoseChart(readings: model.readings(lastHours: hours), unit: model.unit, entries: model.logbook)
                         .frame(height: 260)
                     RecentAlertsList()
                 }
                 .padding()
             }
             .navigationTitle("Glucose")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink {
+                        SensorView()
+                    } label: {
+                        Label("Sensor", systemImage: "sensor.tag.radiowaves.forward")
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct StatusBanners: View {
+    @Environment(AppModel.self) private var model
+    @Environment(SensorConnection.self) private var sensor
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if model.isDemo {
+                Banner(systemImage: "play.circle", text: "Demo data. Pair a sensor in Settings → Data source.", color: .blue)
+            }
+            if let expiry = model.signatureExpiry, expiry.timeIntervalSinceNow < 2 * 86_400 {
+                Banner(systemImage: "clock.badge.exclamationmark",
+                       text: "This app build expires \(expiry.formatted(.relative(presentation: .named))). Re-install it with Sideloadly.",
+                       color: .red)
+            }
+            if !model.isDemo {
+                if model.isStale, let latest = model.latest {
+                    Banner(systemImage: "antenna.radiowaves.left.and.right.slash",
+                           text: "No new reading since \(latest.timestamp.formatted(date: .omitted, time: .shortened)). \(sensor.status.title).",
+                           color: .red)
+                }
+                if let record = sensor.record {
+                    if !record.calibration.isCalibrated {
+                        Banner(systemImage: "drop", text: "Values are uncalibrated estimates. Add a fingerstick to calibrate.")
+                    } else if record.calibration.needsCalibration(now: Date()) {
+                        Banner(systemImage: "drop", text: "Last calibration is over a day old. Add a fingerstick.")
+                    }
+                } else {
+                    Banner(systemImage: "sensor.tag.radiowaves.forward", text: "No sensor paired. Tap the sensor icon to pair.")
+                }
+            }
+            if let error = model.lastError {
+                Banner(systemImage: "xmark.octagon", text: error, color: .red)
+            }
         }
     }
 }
 
 struct CurrentValueCard: View {
     @Environment(AppModel.self) private var model
+    @Environment(SensorConnection.self) private var sensor
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let latest = model.latest {
-                let arrow = Trend.arrow(forRate: Trend.ratePerMinute(model.readings(lastHours: 0.5)))
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(model.unit.format(mgdL: latest.mgdL))
                         .font(.system(size: 72, weight: .bold, design: .rounded))
-                        .foregroundStyle(RangeColor.color(for: latest.mgdL))
+                        .foregroundStyle(model.isStale ? Color.secondary : RangeColor.color(for: latest.mgdL))
+                        .strikethrough(model.isStale)
                         .contentTransition(.numericText())
-                    Text(arrow.symbol)
+                    Text(model.trendArrow.symbol)
                         .font(.system(size: 48, weight: .semibold))
-                        .accessibilityLabel(String(describing: arrow))
+                        .accessibilityLabel("Trend \(String(describing: model.trendArrow))")
                     Text(model.unit.symbol)
                         .font(.headline)
                         .foregroundStyle(.secondary)
@@ -48,9 +96,13 @@ struct CurrentValueCard: View {
                 Text(latest.timestamp, style: .relative)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                SensorStatusRow()
+                + Text(" ago")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                SensorSummaryRow()
             } else {
-                ProgressView("Waiting for the first reading…")
+                ContentUnavailableView("No readings yet", systemImage: "drop",
+                                       description: Text(model.isDemo ? "The demo starts in a moment." : "Waiting for the sensor."))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -59,50 +111,24 @@ struct CurrentValueCard: View {
     }
 }
 
-struct SensorStatusRow: View {
+struct SensorSummaryRow: View {
     @Environment(AppModel.self) private var model
+    @Environment(SensorConnection.self) private var sensor
 
     var body: some View {
-        let expires = SensorLifecycle.expires(startedAt: model.sensorStartedAt)
         HStack {
-            Label("Simulated sensor", systemImage: "sensor.tag.radiowaves.forward")
-            Spacer()
-            Text("ends ") + Text(expires, style: .relative)
+            if model.isDemo {
+                Label("Demo sensor", systemImage: "play.circle")
+            } else if let record = sensor.record {
+                Label(sensor.status.title, systemImage: "sensor.tag.radiowaves.forward")
+                Spacer()
+                Text("ends ") + Text(record.expiresAt, style: .relative)
+            } else {
+                Label("No sensor", systemImage: "sensor.tag.radiowaves.forward")
+            }
         }
         .font(.footnote)
         .foregroundStyle(.secondary)
-    }
-}
-
-struct GlucoseChart: View {
-    let readings: [GlucoseReading]
-    let unit: GlucoseUnit
-
-    var body: some View {
-        let start = readings.first?.timestamp ?? Date()
-        let end = readings.last?.timestamp ?? Date()
-        let maxValue = max(300, readings.map(\.mgdL).max() ?? 0)
-
-        Chart {
-            RectangleMark(
-                xStart: .value("Start", start),
-                xEnd: .value("End", end),
-                yStart: .value("Target low", unit.fromMgdL(70)),
-                yEnd: .value("Target high", unit.fromMgdL(180))
-            )
-            .foregroundStyle(.green.opacity(0.12))
-
-            ForEach(readings) { reading in
-                LineMark(
-                    x: .value("Time", reading.timestamp),
-                    y: .value("Glucose", unit.fromMgdL(reading.mgdL))
-                )
-                .interpolationMethod(.monotone)
-                .foregroundStyle(.primary)
-            }
-        }
-        .chartYScale(domain: unit.fromMgdL(40)...unit.fromMgdL(maxValue))
-        .accessibilityLabel("Glucose chart")
     }
 }
 
@@ -124,23 +150,11 @@ struct RecentAlertsList: View {
                         Text(event.date, style: .time).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Snooze") { model.acknowledge(event) }
+                    Button("Snooze") { model.acknowledge(ruleID: event.ruleID) }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
                 }
             }
-        }
-    }
-}
-
-enum RangeColor {
-    static func color(for mgdL: Double) -> Color {
-        switch mgdL {
-        case ..<54: return .red
-        case ..<70: return .orange
-        case ...180: return .green
-        case ...250: return .yellow
-        default: return .orange
         }
     }
 }

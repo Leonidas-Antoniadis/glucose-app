@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    name: Build unsigned IPA
+    name: Build IPA
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -22,7 +22,7 @@ jobs:
           brew install xcodegen
           xcodegen generate --spec App/project.yml
 
-      - name: Build for device (unsigned)
+      - name: Build for device
         run: |
           set -o pipefail
           xcodebuild build \
@@ -35,16 +35,24 @@ jobs:
             | tee xcodebuild.log | grep -E "error:|warning: .*GlucoseApp|BUILD (SUCCEEDED|FAILED)" || true
           grep -q "BUILD SUCCEEDED" xcodebuild.log
 
-      - name: Package IPA for Sideloadly
+      - name: Ad-hoc sign with entitlements and package
         run: |
+          APP=build/Build/Products/Release-iphoneos/GlucoseApp.app
+          # Sign extensions first, then the app. Sideloadly re-signs with your Apple ID but keeps these entitlements.
+          for EXT in "$APP"/PlugIns/*.appex; do
+            [ -e "$EXT" ] || continue
+            NAME=$(basename "$EXT" .appex)
+            codesign --force --sign - --timestamp=none --entitlements "App/$NAME/$NAME.entitlements" "$EXT"
+          done
+          codesign --force --sign - --timestamp=none --entitlements App/GlucoseApp/GlucoseApp.entitlements "$APP"
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/GlucoseApp.app Payload/
-          zip -qry GlucoseApp-unsigned.ipa Payload
+          cp -R "$APP" Payload/
+          zip -qry GlucoseApp.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: GlucoseApp-unsigned-ipa
-          path: GlucoseApp-unsigned.ipa
+          name: GlucoseApp-ipa
+          path: GlucoseApp.ipa
           retention-days: 30
 
       - uses: actions/upload-artifact@v4
@@ -52,3 +60,68 @@ jobs:
         with:
           name: xcodebuild-log
           path: xcodebuild.log
+
+  screenshots:
+    name: Simulator screenshots
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec App/project.yml
+
+      - name: Build for simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project App/GlucoseApp.xcodeproj \
+            -scheme GlucoseApp \
+            -configuration Debug \
+            -destination "generic/platform=iOS Simulator" \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee sim-build.log | grep -E "error:|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" sim-build.log
+
+      - name: Capture screens
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          phones = [d for r, items in sorted(devices.items(), reverse=True) if 'iOS' in r for d in items if d['name'].startswith('iPhone')]
+          pro = [d for d in phones if 'Pro' in d['name'] and 'Max' not in d['name']]
+          print((pro or phones)[0]['udid'])
+          ")
+          echo "Simulator: $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged --batteryLevel 100 --cellularBars 4 --wifiBars 3
+          xcrun simctl install "$UDID" build/Build/Products/Debug-iphonesimulator/GlucoseApp.app
+          BUNDLE=com.leonidasantoniadis.glucoseapp
+          mkdir -p screenshots
+          shoot() {
+            xcrun simctl launch --terminate-running-process "$UDID" $BUNDLE -screenshots "$@" > /dev/null
+            sleep 8
+          }
+          shoot -onboarding; xcrun simctl io "$UDID" screenshot screenshots/0-onboarding.png
+          for TAB in 0 1 2 3 4; do
+            shoot -tab $TAB; xcrun simctl io "$UDID" screenshot "screenshots/$((TAB+1))-tab$TAB.png"
+          done
+          xcrun simctl ui "$UDID" appearance dark
+          shoot -tab 0; xcrun simctl io "$UDID" screenshot screenshots/6-home-dark.png
+          ls -la screenshots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: sim-build-log
+          path: sim-build.log

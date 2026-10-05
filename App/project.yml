@@ -1,5 +1,5 @@
-# XcodeGen spec. The .xcodeproj is generated in CI (and on any Mac) with:
-#   xcodegen generate --spec App/project.yml
+# XcodeGen spec. The .xcodeproj, Info.plist and entitlements files are generated in CI
+# (and on any Mac) with:  xcodegen generate --spec App/project.yml
 name: GlucoseApp
 options:
   bundleIdPrefix: com.leonidasantoniadis
@@ -11,26 +11,49 @@ packages:
   GlucoseCore:
     path: ../Packages/GlucoseCore
 
+settings:
+  base:
+    MARKETING_VERSION: "0.2.0"
+    CURRENT_PROJECT_VERSION: "2"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+
 targets:
   GlucoseApp:
     type: application
     platform: iOS
     sources:
       - path: GlucoseApp
+      - path: Shared
     dependencies:
       - package: GlucoseCore
+        product: GlucoseCore
+      - package: GlucoseCore
+        product: LibreProtocol
     scheme: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.leonidasantoniadis.glucoseapp
-        MARKETING_VERSION: "0.1.0"
-        CURRENT_PROJECT_VERSION: "1"
-        SWIFT_VERSION: "5.0"
-        TARGETED_DEVICE_FAMILY: "1"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Glucose
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        # Added in phase 1 (sensor link):
-        # INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription, NFC reader usage, UIBackgroundModes: bluetooth-central
+    info:
+      path: GlucoseApp/Info.plist
+      properties:
+        CFBundleDisplayName: Glucose
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIBackgroundModes: [bluetooth-central]
+        NSBluetoothAlwaysUsageDescription: Glucose connects to your Libre sensor over Bluetooth to receive readings every minute.
+        NFCReaderUsageDescription: Glucose reads your Libre sensor over NFC to pair with it and to fetch its history.
+        NSFaceIDUsageDescription: Glucose can lock your health data behind Face ID.
+        NSSupportsLiveActivities: true
+        ITSAppUsesNonExemptEncryption: false
+        GLAppGroup: group.com.leonidasantoniadis.glucoseapp
+    entitlements:
+      path: GlucoseApp/GlucoseApp.entitlements
+      properties:
+        com.apple.developer.nfc.readersession.formats: [TAG]
+        com.apple.developer.usernotifications.time-sensitive: true
+        com.apple.security.application-groups: [group.com.leonidasantoniadis.glucoseapp]
