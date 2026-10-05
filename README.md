@@ -72,7 +72,7 @@ Everything compiles in the cloud on GitHub Actions:
 
 ### Installing with TestFlight
 
-For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.md): one script uploads from a Mac, or a GitHub workflow uploads without one. It needs the paid Apple Developer Program, and each build lasts 90 days.
+For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.md): every push to `main` uploads a new build automatically, and one script uploads from a Mac. It needs the paid Apple Developer Program, and each build lasts 90 days.
 
 ### Installing on your iPhone from Windows
 

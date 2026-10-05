@@ -61,10 +61,10 @@ The owner is whoever has the paid Apple Developer Program membership.
 
 ### Once
 
-1. [App Store Connect](https://appstoreconnect.apple.com) → **Apps → + → New App**. Platform iOS, any name, bundle ID **com.leonidasantoniadis.glucoseapp** (the first upload registers it if it isn't listed yet).
-   If that bundle ID is taken by another account, change both `PRODUCT_BUNDLE_IDENTIFIER` values and the app group in `App/project.yml`, keeping the widget's ID as the app's ID plus `.widget`.
+1. [App Store Connect](https://appstoreconnect.apple.com) → **Apps → + → New App**. Platform iOS, any name, and the bundle ID uploads are built with. The app is set up as **NCA Glucose** with **com.ncatechsolutions.glucoseapp**.
+   Uploads swap only the two `PRODUCT_BUNDLE_IDENTIFIER` values in `App/project.yml` for that ID (the widget gets the same plus `.widget`). The app group stays `group.com.leonidasantoniadis.glucoseapp`, which the code uses. To use another app record, change `BUNDLE_ID` in `.github/workflows/testflight.yml`, or pass `BUNDLE_ID=…` to the script.
 2. **Users and Access** → invite each family member with their own Apple ID.
-3. **TestFlight** tab → create an **internal** group and add them. Internal builds are available within minutes and don't need Apple's review.
+3. **TestFlight** tab → create an **internal** group with **automatic distribution** and add them (ours is **Family**). Internal builds are available within minutes and don't need Apple's review.
 
 ### Every release, from a Mac
 
@@ -77,16 +77,18 @@ The owner is whoever has the paid Apple Developer Program membership.
    Your Team ID is on [developer.apple.com/account](https://developer.apple.com/account) → **Membership**. The script installs XcodeGen if needed, gives the build a new number automatically, archives with automatic signing (it registers NFC, notifications and the app group for you), and uploads.
 3. When processing finishes (5-15 minutes), the build appears under TestFlight and testers are notified.
 
-### Every release, without a Mac (optional)
+### Every release, automatically from GitHub
 
-The **TestFlight upload** workflow does the same from GitHub. Add these repository secrets once (Settings → Secrets and variables → Actions):
+The **TestFlight upload** workflow uploads a new build on every push to `main` that changes `App/`, `Packages/` or the workflow. Testers in the automatic-distribution group get it in TestFlight 5-15 minutes later. You can also run it by hand: **Actions → TestFlight upload → Run workflow**. It needs these repository secrets (Settings → Secrets and variables → Actions):
 
 | Secret | Where to find it |
 |---|---|
 | `APPLE_TEAM_ID` | developer.apple.com/account → Membership |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID` | App Store Connect → Users and Access → Integrations → App Store Connect API → create a key with the **Admin** role |
 | `ASC_KEY_P8` | The contents of the downloaded `.p8` file (it can only be downloaded once) |
+| `BUILD_CERT_P12` | Base64 of an **Apple Development** certificate with its private key (`.p12`), used to sign the archive |
+| `BUILD_CERT_PASSWORD` | The password of that `.p12` |
 
-Then: **Actions → TestFlight upload → Run workflow**.
+Distribution signing uses Apple's cloud-managed certificate through the API key. The stored development certificate stops Xcode from creating a new one on every run (Apple limits how many a team can have). It expires after a year: create a new one and replace both `BUILD_CERT_` secrets.
 
 Export compliance is already answered in the app (`ITSAppUsesNonExemptEncryption = NO`), so builds don't wait on that question.
