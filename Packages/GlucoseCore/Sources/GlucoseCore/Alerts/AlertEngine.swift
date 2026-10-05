@@ -17,6 +17,19 @@ public struct AlertEvent: Hashable, Sendable {
     public let isCritical: Bool
     public let criticalVolume: Double
     public let kind: Kind
+
+    public init(ruleID: UUID, ruleName: String, direction: AlertDirection, valueMgdL: Double, date: Date,
+                sound: SoundStyle, isCritical: Bool, criticalVolume: Double, kind: Kind) {
+        self.ruleID = ruleID
+        self.ruleName = ruleName
+        self.direction = direction
+        self.valueMgdL = valueMgdL
+        self.date = date
+        self.sound = sound
+        self.isCritical = isCritical
+        self.criticalVolume = criticalVolume
+        self.kind = kind
+    }
 }
 
 /// Evaluates every new reading against the rule set.

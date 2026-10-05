@@ -60,8 +60,9 @@ final class StorageAndExportTests: XCTestCase {
     }
 
     func testLogEntryTitles() {
-        XCTAssertEqual(LogEntry(date: TestSupport.noon, kind: .meal(carbsGrams: 45)).title, "Meal · 45 g carbs")
-        XCTAssertEqual(LogEntry(date: TestSupport.noon, kind: .insulin(units: 2.5, type: .rapid)).title, "Insulin · 2.5 U rapid")
+        XCTAssertEqual(LogEntry(date: TestSupport.noon, kind: .meal(carbsGrams: 45)).title, "Food · 45 g carbs")
+        XCTAssertEqual(LogEntry(date: TestSupport.noon, kind: .insulin(units: 2.5, type: .rapid)).title, "Fast-acting insulin · 2.5 U")
+        XCTAssertEqual(LogEntry(date: TestSupport.noon, kind: .insulin(units: 12, type: .long)).title, "Slow-acting insulin · 12 U")
         XCTAssertEqual(LogEntry(date: TestSupport.noon, kind: .exercise(minutes: 30)).title, "Exercise · 30 min")
     }
 

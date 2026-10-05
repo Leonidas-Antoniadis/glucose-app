@@ -11,6 +11,14 @@ public struct LogEntry: Codable, Hashable, Identifiable, Sendable {
 
     public enum InsulinType: String, Codable, CaseIterable, Sendable {
         case rapid, long, other
+
+        public var displayName: String {
+            switch self {
+            case .rapid: return "Fast-acting insulin"
+            case .long: return "Slow-acting insulin"
+            case .other: return "Insulin"
+            }
+        }
     }
 
     public var id: UUID
@@ -27,8 +35,8 @@ public struct LogEntry: Codable, Hashable, Identifiable, Sendable {
 
     public var title: String {
         switch kind {
-        case .meal(let carbs): return carbs.map { "Meal · \(Self.format($0)) g carbs" } ?? "Meal"
-        case .insulin(let units, let type): return "Insulin · \(Self.format(units)) U \(type.rawValue)"
+        case .meal(let carbs): return carbs.map { "Food · \(Self.format($0)) g carbs" } ?? "Food"
+        case .insulin(let units, let type): return "\(type.displayName) · \(Self.format(units)) U"
         case .exercise(let minutes): return "Exercise · \(minutes) min"
         case .note: return "Note"
         }
