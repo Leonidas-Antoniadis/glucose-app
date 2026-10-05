@@ -7,6 +7,30 @@ A personal, **local-only** iPhone app for the FreeStyle Libre 2 and Libre 2 Plus
 ![Core tests](https://github.com/Leonidas-Antoniadis/glucose-app/actions/workflows/core-tests.yml/badge.svg)
 ![iOS build](https://github.com/Leonidas-Antoniadis/glucose-app/actions/workflows/ios-build.yml/badge.svg)
 
+## Screenshots
+
+Captured automatically in the iOS Simulator by the iOS build, using the demo sensor and sample data. The latest full set is attached to each [iOS build run](https://github.com/Leonidas-Antoniadis/glucose-app/actions/workflows/ios-build.yml) as the `screenshots` artifact.
+
+| Home | Past values | Dark mode |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/home.png" width="230" alt="Home screen with current value, trend arrow, quick-add buttons and chart"> | <img src="docs/screenshots/home-chart.png" width="230" alt="Chart with a past value selected, showing a fingerstick nearby"> | <img src="docs/screenshots/home-dark.png" width="230" alt="Home screen in dark mode"> |
+| Current value, trend and quick logging | Swipe back through 14 days; touch and hold to read a value | |
+
+| Log an entry | Logbook | Reports |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/add-entry.png" width="230" alt="Add fast-acting insulin form"> | <img src="docs/screenshots/logbook.png" width="230" alt="Logbook timeline grouped by day"> | <img src="docs/screenshots/reports.png" width="230" alt="Reports with time in ranges and glucose metrics"> |
+| Fast / slow insulin, food, exercise, blood glucose | One timeline, grouped by day | Time in ranges with consensus targets |
+
+| Alerts | Alert editor | First launch |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/alerts.png" width="230" alt="Low and high alert rules"> | <img src="docs/screenshots/alert-editor.png" width="230" alt="Editing an alert rule"> | <img src="docs/screenshots/onboarding.png" width="230" alt="Onboarding with the not-a-medical-device notice"> |
+| 5 low + 5 high, separate low and high alarms | Sound, Critical Alert, repeat, snooze, schedule | Safety notice, units, presets, data source |
+
+| Sensor | Raw sensor data | Packet bytes | Sensor history |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/screenshots/sensor.png" width="175" alt="Sensor status, pairing and calibration"> | <img src="docs/screenshots/raw-data.png" width="175" alt="List of Bluetooth packets and NFC reads"> | <img src="docs/screenshots/packet.png" width="175" alt="One packet's bytes, encrypted and decrypted, colored by meaning"> | <img src="docs/screenshots/sensor-history.png" width="175" alt="Last 5 sensors with serials and end reasons"> |
+| Pairing, calibration, accuracy | Every packet and NFC read | Bytes colored by meaning | Last 5 sensors for support calls |
+
 ## Features
 
 | Area | What it does |
