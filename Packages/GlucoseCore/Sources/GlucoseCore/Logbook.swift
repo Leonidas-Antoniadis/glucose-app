@@ -139,9 +139,12 @@ public enum CSVExport {
     }
 
     public static func fingersticks(_ entries: [FingerstickEntry]) -> String {
-        var lines = ["timestamp,glucose_mgdl,used_for_calibration"]
+        var lines = ["timestamp,glucose_mgdl,used_for_calibration,librelink_mgdl,app_mgdl,sensor_serial"]
+        func number(_ value: Double?) -> String { value.map { String(Int($0.rounded())) } ?? "" }
         for entry in entries.sorted(by: { $0.date < $1.date }) {
-            lines.append("\(iso.string(from: entry.date)),\(Int(entry.mgdL.rounded())),\(entry.usedForCalibration)")
+            lines.append([iso.string(from: entry.date), String(Int(entry.mgdL.rounded())), String(entry.usedForCalibration),
+                          number(entry.libreLinkMgdL), number(entry.appMgdL), escape(entry.sensorSerial ?? "")]
+                .joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
     }

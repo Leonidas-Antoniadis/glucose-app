@@ -77,34 +77,38 @@ public struct AccuracyReport: Hashable, Sendable {
     public static let minimumForConclusion = 5
 
     public let pairs: [Pair]
+    /// Checks with no sensor reading in the minutes before them (a Bluetooth gap, say), left out.
+    public let unpairedCount: Int
 
-    public init(pairs: [Pair]) {
+    public init(pairs: [Pair], unpairedCount: Int = 0) {
         self.pairs = pairs.sorted { $0.date < $1.date }
+        self.unpairedCount = unpairedCount
     }
 
-    /// Matches each fingerstick with the closest sensor reading within `maxGapMinutes`, and notes
-    /// the sensor day and how fast glucose was moving (over the 15 minutes before that reading).
+    /// Matches each fingerstick with the newest reading of its sensor at or before it, within
+    /// `maxGapMinutes`: never a later one, which would know where glucose went. The app's value
+    /// is the one saved with the check when there is one (later calibrations rewrite readings).
+    /// Also notes the sensor day and how fast glucose was moving (the 15 minutes before).
     public init(fingersticks: [FingerstickEntry], readings: [GlucoseReading], maxGapMinutes: Double = 5,
                 includeCalibrationPoints: Bool = false) {
         let sorted = readings.sorted { $0.timestamp < $1.timestamp }
-        let pairs = fingersticks
-            // A stick offered for calibration isn't an independent check, even one refused.
-            .filter { includeCalibrationPoints || (!$0.usedForCalibration && $0.offeredForCalibration != true) }
-            .compactMap { stick -> Pair? in
-                guard let index = Self.closestIndex(to: stick.date, in: sorted) else { return nil }
-                let closest = sorted[index]
-                guard abs(closest.timestamp.timeIntervalSince(stick.date)) <= maxGapMinutes * 60 else { return nil }
-                var window: [GlucoseReading] = []
-                var i = index
-                while i >= 0, closest.timestamp.timeIntervalSince(sorted[i].timestamp) <= 15 * 60 {
-                    if sorted[i].sensorSerial == closest.sensorSerial { window.append(sorted[i]) }
-                    i -= 1
-                }
-                return Pair(date: stick.date, referenceMgdL: stick.mgdL, sensorMgdL: closest.mgdL,
-                            libreLinkMgdL: stick.libreLinkMgdL, sensorSerial: closest.sensorSerial,
-                            sensorDay: closest.minuteIndex / 1440 + 1, ratePerMinute: Trend.ratePerMinute(window))
+        // A stick offered for calibration isn't an independent check, even one refused.
+        let checks = fingersticks.filter { includeCalibrationPoints || (!$0.usedForCalibration && $0.offeredForCalibration != true) }
+        let pairs = checks.compactMap { stick -> Pair? in
+            guard let index = Self.latestIndex(atOrBefore: stick.date, in: sorted, serial: stick.sensorSerial,
+                                               maxGap: maxGapMinutes * 60) else { return nil }
+            let reading = sorted[index]
+            var window: [GlucoseReading] = []
+            var i = index
+            while i >= 0, reading.timestamp.timeIntervalSince(sorted[i].timestamp) <= 15 * 60 {
+                if sorted[i].sensorSerial == reading.sensorSerial { window.append(sorted[i]) }
+                i -= 1
             }
-        self.init(pairs: pairs)
+            return Pair(date: stick.date, referenceMgdL: stick.mgdL, sensorMgdL: stick.appMgdL ?? reading.mgdL,
+                        libreLinkMgdL: stick.libreLinkMgdL, sensorSerial: reading.sensorSerial,
+                        sensorDay: reading.minuteIndex / 1440 + 1, ratePerMinute: Trend.ratePerMinute(window))
+        }
+        self.init(pairs: pairs, unpairedCount: checks.count - pairs.count)
     }
 
     // MARK: Overall
@@ -199,17 +203,22 @@ public struct AccuracyReport: Hashable, Sendable {
         return pairs.map(\.absoluteRelativeDifference).reduce(0, +) / Double(pairs.count) * 100
     }
 
-    /// The reading closest in time to `date` in readings sorted by time.
-    static func closestIndex(to date: Date, in sorted: [GlucoseReading]) -> Int? {
-        guard !sorted.isEmpty else { return nil }
+    /// The newest reading at or before `date`, no more than `maxGap` seconds earlier, from
+    /// `serial` when one is given, in readings sorted by time.
+    static func latestIndex(atOrBefore date: Date, in sorted: [GlucoseReading], serial: String?,
+                            maxGap: TimeInterval) -> Int? {
         var low = 0
         var high = sorted.count
         while low < high {
             let mid = (low + high) / 2
-            if sorted[mid].timestamp < date { low = mid + 1 } else { high = mid }
+            if sorted[mid].timestamp <= date { low = mid + 1 } else { high = mid }
         }
-        let candidates = [low - 1, low].filter { sorted.indices.contains($0) }
-        return candidates.min { abs(sorted[$0].timestamp.timeIntervalSince(date)) < abs(sorted[$1].timestamp.timeIntervalSince(date)) }
+        var index = low - 1
+        while index >= 0, date.timeIntervalSince(sorted[index].timestamp) <= maxGap {
+            if serial == nil || sorted[index].sensorSerial == serial { return index }
+            index -= 1
+        }
+        return nil
     }
 
     /// The 97.5th percentile of Student's t distribution, for a two-sided 95% range.

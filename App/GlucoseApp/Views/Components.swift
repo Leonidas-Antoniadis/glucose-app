@@ -270,7 +270,8 @@ struct Banner: View {
     }
 }
 
-/// A glucose value chosen from a menu in 5 mg/dL steps.
+/// A glucose value chosen from a menu: 5 mg/dL steps, or in mmol/L 0.1 steps (0.5 above 10), so
+/// round values like 3.0, 3.5 and 4.0 mmol/L can be picked.
 struct GlucoseValuePicker: View {
     let title: String
     @Binding var mgdL: Double
@@ -286,9 +287,19 @@ struct GlucoseValuePicker: View {
         .pickerStyle(.menu)
     }
 
-    /// Every 5 mg/dL in the range, plus the current value if it isn't on a step.
+    /// The steps in the range, plus the current value if it isn't on a step.
     private var options: [Double] {
-        var values = Array(stride(from: (range.lowerBound / 5).rounded(.up) * 5, through: range.upperBound, by: 5))
+        var values: [Double]
+        switch unit {
+        case .mgdL:
+            values = Array(stride(from: (range.lowerBound / 5).rounded(.up) * 5, through: range.upperBound, by: 5))
+        case .mmolL:
+            let low = (unit.fromMgdL(range.lowerBound) * 10).rounded(.up) / 10
+            let high = (unit.fromMgdL(range.upperBound) * 10).rounded(.down) / 10
+            let fine = stride(from: low, through: min(high, 9.95), by: 0.1).map { ($0 * 10).rounded() / 10 }
+            let coarse = high >= 10 ? Array(stride(from: max(10, (low * 2).rounded(.up) / 2), through: high, by: 0.5)) : []
+            values = (fine + coarse).map { unit.toMgdL($0) }
+        }
         if !values.contains(mgdL) {
             values.append(mgdL)
             values.sort()
@@ -302,6 +313,7 @@ extension GlucoseUnit {
     func parse(_ text: String) -> Double? {
         let normalized = text.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces)
         guard let value = Double(normalized), value > 0 else { return nil }
-        return toMgdL(value)
+        // Whole mg/dL in mmol/L: 10.0 mmol/L is 180, not 180.16, which would count as above range.
+        return self == .mmolL ? toMgdL(value).rounded() : toMgdL(value)
     }
 }

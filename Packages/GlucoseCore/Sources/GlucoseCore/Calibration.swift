@@ -113,9 +113,13 @@ public struct FingerstickEntry: Codable, Hashable, Identifiable, Sendable {
     /// Offered for calibration (whether or not it was used): such a stick isn't an independent
     /// accuracy check, for example one refused as a likely test error and then retested.
     public var offeredForCalibration: Bool?
+    /// What this app showed for that moment, saved with the check: a later calibration rewrites
+    /// the readings around it, and the check must be scored against what was shown.
+    public var appMgdL: Double?
 
     public init(id: UUID = UUID(), date: Date, mgdL: Double, usedForCalibration: Bool, sensorSerial: String? = nil,
-                calibrationPointID: UUID? = nil, libreLinkMgdL: Double? = nil, offeredForCalibration: Bool? = nil) {
+                calibrationPointID: UUID? = nil, libreLinkMgdL: Double? = nil, offeredForCalibration: Bool? = nil,
+                appMgdL: Double? = nil) {
         self.id = id
         self.date = date
         self.mgdL = mgdL
@@ -124,6 +128,7 @@ public struct FingerstickEntry: Codable, Hashable, Identifiable, Sendable {
         self.calibrationPointID = calibrationPointID
         self.libreLinkMgdL = libreLinkMgdL
         self.offeredForCalibration = offeredForCalibration
+        self.appMgdL = appMgdL
     }
 }
 
@@ -135,4 +140,6 @@ public enum CalibrationOutcome: Equatable, Sendable {
     case warmingUp
     /// Far from what the sensor shows (`sensorMgdL`). Not used until a second fingerstick agrees.
     case needsConfirmation(sensorMgdL: Double)
+    /// Dated more than 96 hours before the newest calibration, outside the window the fit uses.
+    case tooOld
 }

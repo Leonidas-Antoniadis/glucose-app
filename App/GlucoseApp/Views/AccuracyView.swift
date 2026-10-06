@@ -17,11 +17,13 @@ struct AccuracyView: View {
                     breakdown(report, overall: mard)
                 } else {
                     ContentUnavailableView {
-                        Label("No checks yet", systemImage: "drop")
+                        Label(report.unpairedCount > 0 ? "No checks to compare" : "No checks yet", systemImage: "drop")
                     } description: {
                         Text(model.isDemo
                              ? "Accuracy is measured against your own sensor, so it isn't shown for the demo."
-                             : "Add a fingerstick without \"Use to calibrate\". Each one is compared with the sensor value at that moment. Type what LibreLink showed too, to compare the two apps.")
+                             : report.unpairedCount > 0
+                                ? "\(report.unpairedCount) fingerstick\(report.unpairedCount == 1 ? " has" : "s have") no sensor reading in the 5 minutes before, for example during a Bluetooth gap, so there's nothing to compare yet."
+                                : "Add a fingerstick without \"Use to calibrate\". Each one is compared with the sensor value at that moment. Type what LibreLink showed too, to compare the two apps.")
                     }
                 }
             } else {
@@ -91,7 +93,10 @@ struct AccuracyView: View {
                 .accessibilityElement(children: .combine)
             }
         } footer: {
-            Text("Only fingersticks not used for calibration count: a calibration point always matches.")
+            Text("Only fingersticks not used for calibration count: a calibration point always matches."
+                 + (report.unpairedCount > 0
+                    ? " \(report.unpairedCount) more had no sensor reading in the 5 minutes before and aren't counted."
+                    : ""))
         }
     }
 

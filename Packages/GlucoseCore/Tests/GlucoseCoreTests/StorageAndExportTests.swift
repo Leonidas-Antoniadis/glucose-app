@@ -109,7 +109,10 @@ final class StorageAndExportTests: XCTestCase {
         XCTAssertTrue(log.contains(#"2026-01-05T12:00:00Z,meal,30,"pasta, ""big""""#))
 
         let sticks = CSVExport.fingersticks([FingerstickEntry(date: TestSupport.noon, mgdL: 99.6, usedForCalibration: true)])
-        XCTAssertTrue(sticks.contains("2026-01-05T12:00:00Z,100,true"))
+        XCTAssertTrue(sticks.contains("2026-01-05T12:00:00Z,100,true,,,"))
+        let compared = CSVExport.fingersticks([FingerstickEntry(date: TestSupport.noon, mgdL: 104, usedForCalibration: false,
+                                                                sensorSerial: "3MH0", libreLinkMgdL: 98.6, appMgdL: 101.2)])
+        XCTAssertTrue(compared.contains("2026-01-05T12:00:00Z,104,false,99,101,3MH0"), compared)
     }
 
     func testDayNightSplit() {

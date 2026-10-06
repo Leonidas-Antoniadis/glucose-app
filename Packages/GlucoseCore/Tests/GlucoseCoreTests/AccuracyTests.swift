@@ -110,4 +110,21 @@ final class AccuracyTests: XCTestCase {
         XCTAssertEqual(report.pairs.count, 1, "a stick refused as a likely test error isn't scored")
         XCTAssertEqual(report.pairs.first?.referenceMgdL, 104)
     }
+
+    func testPairsUseTheReadingAtOrBeforeTheCheckAndTheSavedValue() {
+        let readings = [TestSupport.reading(100, minute: 0), TestSupport.reading(130, minute: 4)]
+        // 1 minute after the first reading, 3 before the second: the earlier one, never the later.
+        let check = FingerstickEntry(date: readings[0].timestamp.addingTimeInterval(60), mgdL: 105, usedForCalibration: false)
+        XCTAssertEqual(AccuracyReport(fingersticks: [check], readings: readings).pairs.first?.sensorMgdL, 100)
+
+        // The value shown at the time wins over a reading rewritten by a later calibration.
+        let saved = FingerstickEntry(date: check.date, mgdL: 105, usedForCalibration: false, appMgdL: 96)
+        XCTAssertEqual(AccuracyReport(fingersticks: [saved], readings: readings).pairs.first?.sensorMgdL, 96)
+
+        // Another sensor's reading doesn't count, and the check is reported as unpaired.
+        let other = FingerstickEntry(date: check.date, mgdL: 105, usedForCalibration: false, sensorSerial: "OTHER")
+        let report = AccuracyReport(fingersticks: [other], readings: readings)
+        XCTAssertTrue(report.pairs.isEmpty)
+        XCTAssertEqual(report.unpairedCount, 1)
+    }
 }

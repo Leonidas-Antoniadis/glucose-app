@@ -66,4 +66,14 @@ final class CalibrationLifecycleTests: XCTestCase {
             return XCTFail("calibration should apply")
         }
     }
+
+    func testACalibrationOutsideTheFitWindowIsTooOld() {
+        var sensor = record(ageMinutes: 9000)
+        guard case .applied = sensor.addCalibration(referenceMgdL: 140, raw: 1200, date: now) else {
+            return XCTFail("a plausible fingerstick is used")
+        }
+        let fiveDaysEarlier = now.addingTimeInterval(-5 * 86_400)
+        XCTAssertEqual(sensor.addCalibration(referenceMgdL: 120, raw: 1000, date: fiveDaysEarlier), .tooOld)
+        XCTAssertEqual(sensor.calibration.pointCount, 1, "the old point was never added")
+    }
 }

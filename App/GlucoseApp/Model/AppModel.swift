@@ -45,6 +45,8 @@ final class AppModel {
     @ObservationIgnored private var isActive = true
     @ObservationIgnored private var batteryObserver: NSObjectProtocol?
     @ObservationIgnored private var lastPrune = Date.distantPast
+    /// Readings whose save to the archive failed, tried again with the next ones.
+    @ObservationIgnored private var pendingArchive: [GlucoseReading] = []
     /// True while the sensor connection is stopped because the app is closed and "Run in background" is off.
     private(set) var pausedInBackground = false
 
@@ -383,13 +385,17 @@ final class AppModel {
         }
         // Every real reading is archived, whatever the current source: pairing while still in demo
         // mode imports 8 hours of history before the source switches to the sensor.
-        let toArchive = fresh.filter { $0.source != .simulated }
+        // Readings that failed to save before go again: they're already in memory, so they would
+        // never count as fresh again and would be lost at the next launch.
+        let toArchive = pendingArchive + fresh.filter { $0.source != .simulated }
         var archiveFailed = false
         if !toArchive.isEmpty {
             do {
                 try stores.archive?.append(toArchive)
+                pendingArchive = []
             } catch {
                 archiveFailed = true
+                pendingArchive = Array(toArchive.suffix(3 * 24 * 60))
                 lastError = "Couldn't save readings: \(error.localizedDescription)"
             }
             if Date().timeIntervalSince(lastPrune) > 86_400 {
@@ -794,12 +800,18 @@ final class AppModel {
     func addFingerstick(mgdL: Double, date: Date, calibrate: Bool, libreLinkMgdL: Double? = nil) -> String {
         var pointID: UUID?
         var message = "Fingerstick saved."
+        // What the app showed for that moment (the newest reading at or before it), kept with the
+        // check: a later calibration rewrites the readings around it.
+        let shown: Double? = calibrate ? nil : readings.last(where: {
+            $0.timestamp <= date && date.timeIntervalSince($0.timestamp) <= 5 * 60
+        })?.mgdL
         if calibrate {
             message = calibrateSensor(mgdL: mgdL, date: date, pointID: &pointID)
         }
         fingersticks.append(FingerstickEntry(date: date, mgdL: mgdL, usedForCalibration: pointID != nil,
                                              sensorSerial: sensor.record?.serial, calibrationPointID: pointID,
-                                             libreLinkMgdL: libreLinkMgdL, offeredForCalibration: calibrate))
+                                             libreLinkMgdL: libreLinkMgdL, offeredForCalibration: calibrate,
+                                             appMgdL: shown))
         fingersticks.sort { $0.date > $1.date }
         try? stores.fingersticks.save(fingersticks)
         return message
@@ -830,6 +842,8 @@ final class AppModel {
             return "Saved, but not used for calibration: the sensor is still warming up."
         case .needsConfirmation(let sensorMgdL)?:
             return "Saved, but not used for calibration yet: it's far from the sensor's \(unit.format(mgdL: sensorMgdL, includeSymbol: true)). Wash and dry your hands and test again. If a second fingerstick within 30 minutes agrees, it will be used."
+        case .tooOld?:
+            return "Saved, but not used for calibration: it's more than 4 days before the newest calibration."
         case nil:
             return "Saved, but not used for calibration: no sensor is paired."
         }

@@ -393,6 +393,8 @@ final class SensorConnection {
             log("Calibration refused: sensor warming up")
         case .needsConfirmation(let sensorMgdL):
             log(String(format: "Fingerstick %.0f far from sensor %.0f: waiting for a second one", referenceMgdL, sensorMgdL))
+        case .tooOld:
+            log("Calibration refused: more than 96 hours before the newest one")
         }
         return outcome
     }

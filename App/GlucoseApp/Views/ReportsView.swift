@@ -62,7 +62,8 @@ struct ReportsView: View {
                         TimeInRangeBar(ranges: stats.ranges).frame(height: 28)
                         RangeRow(label: "Very high (>\(u.format(mgdL: 250)))", value: stats.ranges.veryHigh, target: "< 5%",
                                  color: RangePalette.color(zone: 4))
-                        RangeRow(label: "High (\(u.format(mgdL: 181))-\(u.format(mgdL: 250)))", value: stats.ranges.high, target: nil,
+                        // One display step above 180, so mmol/L reads 10.1, not a second 10.0.
+                        RangeRow(label: "High (\(u.format(mgdL: 180 + u.editorStepMgdL))-\(u.format(mgdL: 250)))", value: stats.ranges.high, target: nil,
                                  color: RangePalette.color(zone: 3))
                         RangeRow(label: "In range (\(u.format(mgdL: 70))-\(u.format(mgdL: 180)))", value: stats.ranges.inRange, target: "> 70%",
                                  color: RangePalette.color(zone: 2))

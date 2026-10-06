@@ -91,6 +91,12 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
     @discardableResult
     public mutating func addCalibration(referenceMgdL: Double, raw: Double, date: Date) -> CalibrationOutcome {
         guard ageMinutes(at: date) >= Self.warmUpMinutes else { return .warmingUp }
+        // The fit only uses points within 96 hours of the newest: an older one would be dropped
+        // right away, so it isn't reported as applied.
+        if let newest = calibrationPoints.map(\.date).max(),
+           newest.timeIntervalSince(date) > Calibration.maxAgeHours * 3600 {
+            return .tooOld
+        }
         let expected = calibration.mgdL(fromRaw: raw)
         let offset = referenceMgdL - expected
         if abs(offset) > Self.outlierMgdL, abs(offset) > Self.outlierFraction * max(expected, 1) {
