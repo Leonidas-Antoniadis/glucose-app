@@ -54,10 +54,12 @@ public struct SignalStats: Codable, Hashable, Sendable {
         case good, fair, weak
 
         public init(rssi: Double) {
-            switch rssi {
-            case -75...: self = .good
-            case -88 ..< -75: self = .fair
-            default: self = .weak
+            if rssi >= -75 {
+                self = .good
+            } else if rssi >= -88 {
+                self = .fair
+            } else {
+                self = .weak
             }
         }
     }
