@@ -19,9 +19,15 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
     public var bluetoothAddress: [UInt8]?
     public var calibration: Calibration
     public var calibrationPoints: [CalibrationPoint]
+    /// A fingerstick far from what the sensor showed, waiting for a second one to confirm it.
+    public var unconfirmedPoint: CalibrationPoint?
     public var pairedAt: Date
 
     public static let warmUpMinutes = 60
+    /// A fingerstick this far from the sensor's value (both in mg/dL and as a fraction) is more
+    /// often a test error, such as sugar on the finger, than a sensor error.
+    public static let outlierMgdL: Double = 40
+    public static let outlierFraction: Double = 0.4
 
     public init(uid: [UInt8], patchInfo: [UInt8], ageMinutes: Int, maxLifeMinutes: Int, now: Date) {
         self.uid = uid
@@ -36,6 +42,7 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
         self.bluetoothAddress = nil
         self.calibration = .uncalibrated
         self.calibrationPoints = []
+        self.unconfirmedPoint = nil
         self.pairedAt = now
     }
 
@@ -46,8 +53,10 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
                               previous: LibreSensorRecord?) -> LibreSensorRecord {
         var record = LibreSensorRecord(uid: uid, patchInfo: patchInfo, ageMinutes: ageMinutes, maxLifeMinutes: maxLifeMinutes, now: now)
         if let previous, previous.uid == uid {
+            // Kept exactly as it was: refitting at the pairing time would drop fingersticks
+            // older than 96 hours and make every value jump.
             record.calibrationPoints = previous.calibrationPoints
-            record.calibration = Calibration.fit(previous.calibrationPoints, now: now)
+            record.calibration = previous.calibration
             record.pairedAt = previous.pairedAt
         }
         return record
@@ -76,13 +85,52 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
                                                        unlockCount: UInt16(truncatingIfNeeded: unlockCount))
     }
 
-    /// Adds a fingerstick calibration using the raw value closest in time, and refits.
+    /// Adds a fingerstick calibration. `raw` must be the sensor's raw value at the fingerstick's
+    /// time, not the latest one. Refused during warm-up; a fingerstick far from the sensor's value
+    /// is only used once a second fingerstick within 30 minutes agrees with it.
     @discardableResult
-    public mutating func addCalibration(referenceMgdL: Double, raw: Double, date: Date) -> Calibration {
-        calibrationPoints.append(CalibrationPoint(date: date, referenceMgdL: referenceMgdL, raw: raw))
-        calibrationPoints = calibrationPoints.filter { date.timeIntervalSince($0.date) <= Calibration.maxAgeHours * 3600 }
-        calibration = Calibration.fit(calibrationPoints, now: date)
-        return calibration
+    public mutating func addCalibration(referenceMgdL: Double, raw: Double, date: Date) -> CalibrationOutcome {
+        guard ageMinutes(at: date) >= Self.warmUpMinutes else { return .warmingUp }
+        let expected = calibration.mgdL(fromRaw: raw)
+        let offset = referenceMgdL - expected
+        if abs(offset) > Self.outlierMgdL, abs(offset) > Self.outlierFraction * max(expected, 1) {
+            let confirmed = unconfirmedPoint.map { pending in
+                let pendingOffset = pending.referenceMgdL - calibration.mgdL(fromRaw: pending.raw)
+                return abs(date.timeIntervalSince(pending.date)) <= 30 * 60
+                    && abs(pendingOffset - offset) <= max(15, 0.15 * referenceMgdL)
+            } ?? false
+            guard confirmed else {
+                unconfirmedPoint = CalibrationPoint(date: date, referenceMgdL: referenceMgdL, raw: raw)
+                return .needsConfirmation(sensorMgdL: expected)
+            }
+        }
+        unconfirmedPoint = nil
+        let point = CalibrationPoint(date: date, referenceMgdL: referenceMgdL, raw: raw)
+        calibrationPoints.append(point)
+        refitCalibration()
+        return .applied(pointID: point.id)
+    }
+
+    /// Removes a calibration point (its fingerstick was deleted) and refits. Returns false if
+    /// the point isn't part of this sensor's calibration.
+    @discardableResult
+    public mutating func removeCalibration(id: UUID) -> Bool {
+        guard calibrationPoints.contains(where: { $0.id == id }) else { return false }
+        calibrationPoints.removeAll { $0.id == id }
+        refitCalibration()
+        return true
+    }
+
+    /// Fits the points within 96 hours of the newest fingerstick. The fit is anchored on the
+    /// newest point, not on the time of entry, so a backdated fingerstick never pushes later
+    /// ones out, and a calibration doesn't silently expire while nothing changes.
+    private mutating func refitCalibration() {
+        guard let newest = calibrationPoints.map(\.date).max() else {
+            calibration = .uncalibrated
+            return
+        }
+        calibrationPoints = calibrationPoints.filter { newest.timeIntervalSince($0.date) <= Calibration.maxAgeHours * 3600 }
+        calibration = Calibration.fit(calibrationPoints, now: newest)
     }
 
     /// The MAC address in the sensor's 6-byte answer to the enable-streaming command, which sends it

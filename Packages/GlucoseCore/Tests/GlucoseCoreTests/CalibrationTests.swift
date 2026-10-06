@@ -41,6 +41,14 @@ final class CalibrationTests: XCTestCase {
         XCTAssertEqual(calibration.slope, Calibration.slopeRange.upperBound, accuracy: 1e-9)
     }
 
+    func testContradictingPointsKeepTheDefaultSlope() {
+        // A contaminated finger: 170 at raw 680, then the real 120 at raw 1020. The relation is
+        // backwards, so no slope is fitted (it used to be clamped flat, showing a raw-425 low as 110).
+        let calibration = Calibration.fit([point(170, raw: 680, hoursAgo: 1), point(120, raw: 1020)], now: now)
+        XCTAssertEqual(calibration.slope, Calibration.defaultSlope)
+        XCTAssertLessThan(calibration.mgdL(fromRaw: 425), 100)
+    }
+
     func testOldPointsAreIgnored() {
         let calibration = Calibration.fit([point(200, raw: 850, hoursAgo: 120)], now: now)
         XCTAssertFalse(calibration.isCalibrated)

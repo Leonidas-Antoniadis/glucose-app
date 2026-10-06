@@ -64,6 +64,8 @@ struct QuickAddBar: View {
 struct LogbookView: View {
     @Environment(AppModel.self) private var model
     @State private var adding: QuickLogKind?
+    /// A calibration fingerstick waiting for confirmation before it's deleted.
+    @State private var pendingCalibrationDelete: FingerstickEntry?
 
     /// Notes and fingersticks in one timeline, newest first.
     private enum Row: Identifiable {
@@ -113,6 +115,16 @@ struct LogbookView: View {
             }
             .navigationTitle("Logbook")
             .sheet(item: $adding) { kind in AddLogEntryView(kind: kind) }
+            .confirmationDialog("Delete this calibration?", isPresented: Binding(
+                get: { pendingCalibrationDelete != nil }, set: { if !$0 { pendingCalibrationDelete = nil } }
+            ), titleVisibility: .visible) {
+                Button("Delete and undo calibration", role: .destructive) {
+                    if let stick = pendingCalibrationDelete { model.deleteFingersticks([stick.id]) }
+                    pendingCalibrationDelete = nil
+                }
+            } message: {
+                Text("This fingerstick was used to calibrate the sensor. Deleting it removes it from the calibration, so glucose values will change.")
+            }
         }
     }
 
@@ -148,6 +160,7 @@ struct LogbookView: View {
     private func delete(_ row: Row) {
         switch row {
         case .entry(let entry): model.deleteLogEntries([entry.id])
+        case .stick(let stick) where stick.usedForCalibration: pendingCalibrationDelete = stick
         case .stick(let stick): model.deleteFingersticks([stick.id])
         }
     }

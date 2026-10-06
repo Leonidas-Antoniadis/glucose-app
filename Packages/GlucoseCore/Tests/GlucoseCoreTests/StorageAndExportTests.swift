@@ -31,6 +31,38 @@ final class StorageAndExportTests: XCTestCase {
         XCTAssertEqual(window.map(\.mgdL), [101, 102, 103])
     }
 
+    func testArchiveLoadDoesNotSkipTheDayOfTheClockChange() throws {
+        // Athens leaves summer time on 25 Oct 2026. Stepping by local days from 23:30 UTC on the
+        // 24th used to jump straight to the 26th and miss the whole 25 Oct file.
+        let saved = NSTimeZone.default
+        NSTimeZone.default = TimeZone(identifier: "Europe/Athens")!
+        defer { NSTimeZone.default = saved }
+        let archive = try ReadingArchive(directory: directory)
+        let oct25 = Date(timeIntervalSince1970: 1_792_886_400)   // 2026-10-25 00:00 UTC
+        let readings = (0..<24).map { hour in
+            GlucoseReading(sensorSerial: "TEST", minuteIndex: hour, timestamp: oct25.addingTimeInterval(Double(hour) * 3600),
+                           mgdL: 100, source: .bluetooth)
+        }
+        try archive.append(readings)
+        let loaded = try archive.load(from: oct25.addingTimeInterval(-30 * 60), to: oct25.addingTimeInterval(2 * 86_400))
+        XCTAssertEqual(loaded.count, 24)
+    }
+
+    func testAppendAfterACutShortWriteKeepsTheNewReading() throws {
+        let archive = try ReadingArchive(directory: directory)
+        try archive.append([TestSupport.reading(100, minute: 0)])
+        // Simulate a write cut short: half a line at the end of the day file.
+        let file = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(#"{"sensorSerial":"TES"#.utf8))
+        try handle.close()
+
+        try archive.append([TestSupport.reading(110, minute: 1)])
+        let loaded = try archive.load(from: TestSupport.noon, to: TestSupport.noon.addingTimeInterval(3600))
+        XCTAssertEqual(loaded.map(\.mgdL), [100, 110])
+    }
+
     func testArchiveDeduplicatesOnLoad() throws {
         let archive = try ReadingArchive(directory: directory)
         try archive.append([TestSupport.reading(100, minute: 5, source: .backfill)])

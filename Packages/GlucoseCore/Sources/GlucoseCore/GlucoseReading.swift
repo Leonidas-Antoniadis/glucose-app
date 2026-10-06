@@ -40,6 +40,18 @@ public struct GlucoseReading: Codable, Hashable, Sendable, Identifiable {
         GlucoseReading(sensorSerial: sensorSerial, minuteIndex: minuteIndex, timestamp: timestamp, mgdL: mgdL,
                        source: source, raw: raw)
     }
+
+    /// The same reading with another glucose value.
+    public func withValue(_ mgdL: Double) -> GlucoseReading {
+        GlucoseReading(sensorSerial: sensorSerial, minuteIndex: minuteIndex, timestamp: timestamp, mgdL: mgdL,
+                       source: source, raw: raw)
+    }
+
+    /// The value recomputed from the raw signal with another calibration (nil without a raw value).
+    public func recalibrated(with calibration: Calibration) -> GlucoseReading? {
+        guard let raw, let mgdL = ReadingPipeline.clamped(calibration.mgdL(fromRaw: raw).rounded()) else { return nil }
+        return withValue(mgdL)
+    }
 }
 
 public enum ReadingPipeline {
@@ -86,6 +98,34 @@ public enum ReadingPipeline {
         readings
             .map { $0.sensorSerial == sensorSerial ? $0.retimed(to: activatedAt.addingTimeInterval(Double($0.minuteIndex) * 60)) : $0 }
             .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Recomputes one sensor's readings from `since` on with a new calibration. Values from before
+    /// a calibration would otherwise sit next to values from after it, and the step between them
+    /// reads as a fast rise or fall (false arrows and "Low soon" alerts).
+    public static func recalibrated(_ readings: [GlucoseReading], sensorSerial: String, since: Date,
+                                    calibration: Calibration) -> [GlucoseReading] {
+        readings.map { reading in
+            guard reading.sensorSerial == sensorSerial, reading.timestamp >= since else { return reading }
+            return reading.recalibrated(with: calibration) ?? reading
+        }
+    }
+
+    /// The minutes each reading stands for: the gap to the next reading, up to `maxMinutes` (the
+    /// spacing of the sensor's 15-minute history). A longer gap is missing data, not coverage, so
+    /// the reading before it counts as one minute. The last reading takes the weight before it.
+    /// Statistics weighted this way count a 15-minute history value 15 times as much as a
+    /// 1-minute live value. `readings` must be sorted by time.
+    public static func timeWeights(_ readings: [GlucoseReading], maxMinutes: Double = 16) -> [Double] {
+        guard readings.count > 1 else { return readings.map { _ in 1 } }
+        var weights: [Double] = []
+        weights.reserveCapacity(readings.count)
+        for (current, next) in zip(readings, readings.dropFirst()) {
+            let gap = max(next.timestamp.timeIntervalSince(current.timestamp) / 60, 0)
+            weights.append(gap <= maxMinutes ? gap : 1)
+        }
+        weights.append(weights.last ?? 1)
+        return weights
     }
 
     /// Returns the gaps (in minutes of sensor time) inside a single sensor's series.

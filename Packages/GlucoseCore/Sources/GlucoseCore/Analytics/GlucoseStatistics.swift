@@ -38,23 +38,31 @@ public struct GlucoseStatistics: Hashable, Sendable {
     public var isCVStable: Bool { coefficientOfVariation <= Self.cvTarget }
     public var hasSufficientData: Bool { dataSufficiency >= Self.sufficiencyTarget }
 
-    /// - Parameters:
-    ///   - period: only readings inside this interval are used.
-    ///   - expectedIntervalMinutes: sensor reading interval (1 minute for Libre 2 Plus).
-    public init?(readings: [GlucoseReading], period: DateInterval, expectedIntervalMinutes: Double = 1) {
-        let values = readings
-            .filter { period.contains($0.timestamp) }
-            .map(\.mgdL)
-        self.init(values: values, expectedCount: period.duration / 60 / expectedIntervalMinutes)
+    /// Each reading counts by the time it covers (see `ReadingPipeline.timeWeights`), so the
+    /// 15-minute history imported by NFC weighs as much as the 15 live minutes it stands for.
+    /// - Parameter period: only readings inside this interval are used.
+    public init?(readings: [GlucoseReading], period: DateInterval) {
+        let inPeriod = readings.filter { period.contains($0.timestamp) }.sorted { $0.timestamp < $1.timestamp }
+        self.init(values: inPeriod.map(\.mgdL), minutes: ReadingPipeline.timeWeights(inPeriod),
+                  expectedMinutes: period.duration / 60)
     }
 
+    /// Unweighted: every value counts as one minute.
     /// - Parameter expectedCount: how many readings a complete period would contain.
     public init?(values: [Double], expectedCount: Double) {
-        guard !values.isEmpty else { return nil }
+        self.init(values: values, minutes: values.map { _ in 1 }, expectedMinutes: expectedCount)
+    }
 
-        let n = Double(values.count)
-        let mean = values.reduce(0, +) / n
-        let variance = values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / n
+    /// - Parameters:
+    ///   - minutes: the time each value stands for.
+    ///   - expectedMinutes: the length of the period; covered minutes over this is the data sufficiency.
+    public init?(values: [Double], minutes: [Double], expectedMinutes: Double) {
+        guard !values.isEmpty, values.count == minutes.count else { return nil }
+        let total = minutes.reduce(0, +)
+        guard total > 0 else { return nil }
+
+        let mean = zip(values, minutes).reduce(0) { $0 + $1.0 * $1.1 } / total
+        let variance = zip(values, minutes).reduce(0) { $0 + ($1.0 - mean) * ($1.0 - mean) * $1.1 } / total
         let sd = variance.squareRoot()
 
         count = values.count
@@ -64,7 +72,7 @@ public struct GlucoseStatistics: Hashable, Sendable {
         gmiPercent = 3.31 + 0.02392 * mean
 
         func fraction(_ predicate: (Double) -> Bool) -> Double {
-            Double(values.filter(predicate).count) / n
+            zip(values, minutes).reduce(0) { predicate($1.0) ? $0 + $1.1 : $0 } / total
         }
         ranges = RangeBreakdown(
             veryLow: fraction { $0 < 54 },
@@ -74,6 +82,6 @@ public struct GlucoseStatistics: Hashable, Sendable {
             veryHigh: fraction { $0 > 250 }
         )
 
-        dataSufficiency = expectedCount > 0 ? min(1, n / expectedCount) : 0
+        dataSufficiency = expectedMinutes > 0 ? min(1, total / expectedMinutes) : 0
     }
 }

@@ -68,6 +68,45 @@ final class AnalyticsTests: XCTestCase {
         XCTAssertLessThanOrEqual(bin.p75, bin.p95)
     }
 
+    func testBackfilledReadingsCountByTheTimeTheyCover() throws {
+        // A night at 60 imported as 32 history values (every 15 minutes), then 16 live hours at 120.
+        let night = (0..<32).map { TestSupport.reading(60, minute: $0 * 15, source: .backfill) }
+        let day = (480..<1440).map { TestSupport.reading(120, minute: $0) }
+        let stats = try XCTUnwrap(GlucoseStatistics(readings: night + day, period: DateInterval(start: TestSupport.noon, duration: 86_400)))
+        XCTAssertEqual(stats.ranges.low, 1.0 / 3, accuracy: 0.001, "the night is a third of the day, not 3%")
+        XCTAssertEqual(stats.dataSufficiency, 1, accuracy: 0.001)
+    }
+
+    func testReadingBeforeAGapCountsOneMinute() {
+        let readings = [TestSupport.reading(100, minute: 0), TestSupport.reading(100, minute: 180), TestSupport.reading(100, minute: 181)]
+        XCTAssertEqual(ReadingPipeline.timeWeights(readings), [1, 1, 1], "a 3-hour gap is missing data, not coverage")
+    }
+
+    func testTrendIgnoresAnotherSensorsReadings() {
+        // Two flat sensors 30 mg/dL apart, overlapping in time after a sensor change.
+        let old = (0..<15).map { GlucoseReading(sensorSerial: "OLD", minuteIndex: 5000 + $0, timestamp: TestSupport.noon.addingTimeInterval(Double($0) * 60),
+                                                mgdL: 100, source: .bluetooth) }
+        let new = (8..<16).map { GlucoseReading(sensorSerial: "NEW", minuteIndex: 200 + $0, timestamp: TestSupport.noon.addingTimeInterval(Double($0) * 60 + 30),
+                                                mgdL: 130, source: .bluetooth) }
+        XCTAssertEqual(Trend.ratePerMinute(old + new) ?? .nan, 0, accuracy: 0.0001)
+    }
+
+    func testRecalibratedReadingsShowNoStep() {
+        // Flat at 120 (raw 1020, uncalibrated), then a calibration to 90 at the newest reading.
+        let readings = (0..<16).map { minute in
+            GlucoseReading(sensorSerial: "TEST", minuteIndex: minute, timestamp: TestSupport.noon.addingTimeInterval(Double(minute) * 60),
+                           mgdL: 120, source: .bluetooth, raw: 1020)
+        }
+        let calibration = Calibration.fit([CalibrationPoint(date: TestSupport.noon.addingTimeInterval(15 * 60), referenceMgdL: 90, raw: 1020)],
+                                          now: TestSupport.noon.addingTimeInterval(15 * 60))
+        // Without recomputing, the old values next to a new 90 make a falling trend.
+        let stepped = Array(readings.dropLast()) + [readings.last!.withValue(90)]
+        XCTAssertLessThan(Trend.ratePerMinute(stepped) ?? 0, -0.5)
+        let fixed = ReadingPipeline.recalibrated(readings, sensorSerial: "TEST", since: TestSupport.noon, calibration: calibration)
+        XCTAssertEqual(fixed.map(\.mgdL), Array(repeating: 90, count: 16))
+        XCTAssertEqual(Trend.ratePerMinute(fixed) ?? .nan, 0, accuracy: 0.0001)
+    }
+
     func testConsensusTargets() throws {
         let good = (0..<100).map { TestSupport.reading($0 < 2 ? 65 : 120, minute: $0) }
         let stats = try XCTUnwrap(GlucoseStatistics(readings: good, period: DateInterval(start: TestSupport.noon, duration: 6000)))

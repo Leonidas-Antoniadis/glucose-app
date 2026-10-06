@@ -343,15 +343,37 @@ final class SensorConnection {
 
     // MARK: Calibration
 
-    /// Calibrates against a fingerstick taken now. Needs a raw value from the last 10 minutes.
+    /// Calibrates against a fingerstick. `raw` is the sensor's raw value at the fingerstick's time
+    /// (see `AppModel.addFingerstick`).
     @discardableResult
-    func calibrate(referenceMgdL: Double, at date: Date) -> Bool {
-        guard var record, let lastRaw, abs(date.timeIntervalSince(lastRaw.date)) <= 10 * 60 else { return false }
-        record.addCalibration(referenceMgdL: referenceMgdL, raw: lastRaw.raw, date: date)
+    func calibrate(referenceMgdL: Double, raw: Double, at date: Date) -> CalibrationOutcome? {
+        guard var record else { return nil }
+        let outcome = record.addCalibration(referenceMgdL: referenceMgdL, raw: raw, date: date)
         self.record = record
         save()
-        log(String(format: "Calibrated: slope %.4f, intercept %.1f, %ld points",
-                   record.calibration.slope, record.calibration.intercept, record.calibration.pointCount))
+        switch outcome {
+        case .applied:
+            log(String(format: "Calibrated: slope %.4f, intercept %.1f, %ld points",
+                       record.calibration.slope, record.calibration.intercept, record.calibration.pointCount))
+        case .warmingUp:
+            log("Calibration refused: sensor warming up")
+        case .needsConfirmation(let sensorMgdL):
+            log(String(format: "Fingerstick %.0f far from sensor %.0f: waiting for a second one", referenceMgdL, sensorMgdL))
+        }
+        return outcome
+    }
+
+    /// Removes a deleted fingerstick's calibration point (matched by id, or for fingersticks saved
+    /// before ids were kept, by time and value). Returns true if the calibration changed.
+    func removeCalibration(pointID: UUID?, date: Date, mgdL: Double) -> Bool {
+        guard var record else { return false }
+        let match = record.calibrationPoints.first { point in
+            point.id == pointID || (abs(point.date.timeIntervalSince(date)) < 1 && point.referenceMgdL == mgdL)
+        }
+        guard let match, record.removeCalibration(id: match.id) else { return false }
+        self.record = record
+        save()
+        log("Calibration point removed (fingerstick deleted), \(record.calibration.pointCount) left")
         return true
     }
 

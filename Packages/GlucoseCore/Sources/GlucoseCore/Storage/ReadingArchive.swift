@@ -39,15 +39,27 @@ public final class ReadingArchive: @unchecked Sendable {
                 data.append(try encoder.encode(reading))
                 data.append(0x0A)
             }
-            if fileManager.fileExists(atPath: url.path) {
-                let handle = try FileHandle(forWritingTo: url)
-                defer { try? handle.close() }
-                try handle.seekToEnd()
-                try handle.write(contentsOf: data)
-            } else {
-                try data.write(to: url, options: .atomic)
-            }
+            try appendData(data, to: url)
         }
+    }
+
+    /// Appends lines to a day file. If an earlier write was cut short (storage full), the file
+    /// ends with half a line: a newline first keeps the new lines from being glued onto it.
+    private func appendData(_ data: Data, to url: URL) throws {
+        guard fileManager.fileExists(atPath: url.path) else {
+            try data.write(to: url, options: .atomic)
+            return
+        }
+        let handle = try FileHandle(forUpdating: url)
+        defer { try? handle.close() }
+        let end = try handle.seekToEnd()
+        var prefix = Data()
+        if end > 0 {
+            try handle.seek(toOffset: end - 1)
+            if handle.readData(ofLength: 1) != Data([0x0A]) { prefix.append(0x0A) }
+            try handle.seekToEnd()
+        }
+        try handle.write(contentsOf: prefix + data)
     }
 
     /// Loads readings in the interval, deduplicated (live beats backfill) and sorted.
@@ -56,40 +68,57 @@ public final class ReadingArchive: @unchecked Sendable {
         defer { lock.unlock() }
         var readings: [GlucoseReading] = []
         // Never walk more than ~2 years of day files.
-        var day = max(start, end.addingTimeInterval(-730 * 86_400))
-        let calendar = Self.dayFormatter.calendar!
-        var visited = Set<URL>()
-        while day <= end.addingTimeInterval(86_400) {
-            let url = fileURL(for: day)
-            if visited.insert(url).inserted, let data = try? Data(contentsOf: url) {
-                for line in data.split(separator: 0x0A) where !line.isEmpty {
-                    if let reading = try? decoder.decode(GlucoseReading.self, from: Data(line)),
-                       reading.timestamp >= start, reading.timestamp <= end {
-                        readings.append(reading)
-                    }
+        for url in dayFiles(from: max(start, end.addingTimeInterval(-730 * 86_400)), through: end) {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            for line in data.split(separator: 0x0A) where !line.isEmpty {
+                if let reading = try? decoder.decode(GlucoseReading.self, from: Data(line)),
+                   reading.timestamp >= start, reading.timestamp <= end {
+                    readings.append(reading)
                 }
             }
-            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
-            day = next
         }
         return ReadingPipeline.merge([], with: readings)
+    }
+
+    /// The day files covering `start...end`. File names are UTC days, so this walks UTC days in
+    /// fixed 24-hour steps: stepping by local calendar days skips a whole file at a DST change.
+    private func dayFiles(from start: Date, through end: Date) -> [URL] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        var urls: [URL] = []
+        var day = calendar.startOfDay(for: start)
+        while day <= end {
+            urls.append(fileURL(for: day))
+            day = day.addingTimeInterval(86_400)
+        }
+        return urls
     }
 
     /// Re-dates one sensor's stored readings from its minute counter (see `ReadingPipeline.retimed`)
     /// and rewrites the day files they are in. A sensor lives at most about 15 days, so only the
     /// files from two days before `activatedAt` to two days after `end` are touched.
     public func retime(sensorSerial: String, activatedAt: Date, through end: Date) throws {
+        try rewrite(sensorSerial: sensorSerial, from: activatedAt.addingTimeInterval(-2 * 86_400),
+                    through: max(end, activatedAt).addingTimeInterval(2 * 86_400)) { reading in
+            reading.retimed(to: activatedAt.addingTimeInterval(Double(reading.minuteIndex) * 60))
+        }
+    }
+
+    /// Recomputes one sensor's stored readings from `since` on with a new calibration (see
+    /// `ReadingPipeline.recalibrated`), so values loaded later match what the screen showed.
+    public func recalibrate(sensorSerial: String, since: Date, calibration: Calibration) throws {
+        try rewrite(sensorSerial: sensorSerial, from: since, through: Date().addingTimeInterval(86_400)) { reading in
+            reading.timestamp >= since ? (reading.recalibrated(with: calibration) ?? reading) : reading
+        }
+    }
+
+    /// Rewrites the day files from `start` to `end` that hold readings of one sensor, passing each
+    /// of that sensor's readings through `transform`. Other readings stay as they are.
+    private func rewrite(sensorSerial: String, from start: Date, through end: Date,
+                         transform: (GlucoseReading) -> GlucoseReading) throws {
         lock.lock()
         defer { lock.unlock() }
-        // Step in fixed 24-hour steps from a UTC instant: file names are UTC days.
-        var urls: [URL] = []
-        var day = activatedAt.addingTimeInterval(-2 * 86_400)
-        let last = max(end, activatedAt).addingTimeInterval(2 * 86_400)
-        while day <= last, urls.count < 40 {
-            let url = fileURL(for: day)
-            if !urls.contains(url) { urls.append(url) }
-            day = day.addingTimeInterval(86_400)
-        }
+        let urls = Array(dayFiles(from: start, through: end).prefix(40))
 
         var kept: [GlucoseReading] = []
         var touchedFiles: [URL] = []
@@ -101,9 +130,9 @@ public final class ReadingArchive: @unchecked Sendable {
             touchedFiles.append(url)
             for reading in readings {
                 if reading.sensorSerial == sensorSerial {
-                    let timestamp = activatedAt.addingTimeInterval(Double(reading.minuteIndex) * 60)
-                    if timestamp != reading.timestamp { changed = true }
-                    kept.append(reading.retimed(to: timestamp))
+                    let updated = transform(reading)
+                    if updated != reading { changed = true }
+                    kept.append(updated)
                 } else {
                     kept.append(reading)
                 }
@@ -120,14 +149,11 @@ public final class ReadingArchive: @unchecked Sendable {
             try? fileManager.removeItem(at: url)
         }
         for (url, data) in contents {
-            if touchedFiles.contains(url) || !fileManager.fileExists(atPath: url.path) {
+            if touchedFiles.contains(url) {
                 try data.write(to: url, options: .atomic)
             } else {
                 // A reading moved into a day file this pass didn't read: add to it.
-                let handle = try FileHandle(forWritingTo: url)
-                defer { try? handle.close() }
-                try handle.seekToEnd()
-                try handle.write(contentsOf: data)
+                try appendData(data, to: url)
             }
         }
     }

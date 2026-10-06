@@ -21,18 +21,24 @@ public struct AmbulatoryGlucoseProfile: Hashable, Sendable {
         precondition(binMinutes > 0 && (24 * 60) % binMinutes == 0, "binMinutes must divide a day")
         self.binMinutes = binMinutes
 
+        // Each reading is counted once per minute it covers, so 15-minute history values weigh as
+        // much as the live minutes they stand for (see `ReadingPipeline.timeWeights`).
         var grouped: [Int: [Double]] = [:]
-        for reading in readings {
+        var counts: [Int: Int] = [:]
+        let sorted = readings.sorted { $0.timestamp < $1.timestamp }
+        for (reading, minutes) in zip(sorted, ReadingPipeline.timeWeights(sorted)) {
             let parts = calendar.dateComponents([.hour, .minute], from: reading.timestamp)
             let minuteOfDay = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
-            grouped[minuteOfDay / binMinutes * binMinutes, default: []].append(reading.mgdL)
+            let key = minuteOfDay / binMinutes * binMinutes
+            grouped[key, default: []].append(contentsOf: repeatElement(reading.mgdL, count: max(1, Int(minutes.rounded()))))
+            counts[key, default: 0] += 1
         }
 
         bins = grouped.keys.sorted().compactMap { key in
             guard let values = grouped[key]?.sorted(), !values.isEmpty else { return nil }
             return Bin(
                 minuteOfDay: key,
-                count: values.count,
+                count: counts[key] ?? values.count,
                 p5: Self.percentile(values, 0.05),
                 p25: Self.percentile(values, 0.25),
                 median: Self.percentile(values, 0.50),

@@ -8,22 +8,26 @@ public enum DailyPatterns {
     /// Statistics for daytime (06:00-22:00) and night (22:00-06:00) readings.
     public static func dayNight(_ readings: [GlucoseReading], period: DateInterval, calendar: Calendar = .current)
         -> (day: GlucoseStatistics?, night: GlucoseStatistics?) {
-        var day: [Double] = []
-        var night: [Double] = []
-        for reading in readings where period.contains(reading.timestamp) {
+        var day: (values: [Double], minutes: [Double]) = ([], [])
+        var night: (values: [Double], minutes: [Double]) = ([], [])
+        let inPeriod = readings.filter { period.contains($0.timestamp) }.sorted { $0.timestamp < $1.timestamp }
+        // Weighted by the time each reading covers, like the overall statistics.
+        for (reading, minutes) in zip(inPeriod, ReadingPipeline.timeWeights(inPeriod)) {
             let hour = calendar.component(.hour, from: reading.timestamp)
             if hour >= dayStartHour && hour < nightStartHour {
-                day.append(reading.mgdL)
+                day.values.append(reading.mgdL)
+                day.minutes.append(minutes)
             } else {
-                night.append(reading.mgdL)
+                night.values.append(reading.mgdL)
+                night.minutes.append(minutes)
             }
         }
-        // Expected counts scale with the share of the day each window covers (1-minute readings).
+        // Expected minutes scale with the share of the day each window covers.
         let totalMinutes = period.duration / 60
         let dayShare = Double(nightStartHour - dayStartHour) / 24
         return (
-            GlucoseStatistics(values: day, expectedCount: totalMinutes * dayShare),
-            GlucoseStatistics(values: night, expectedCount: totalMinutes * (1 - dayShare))
+            GlucoseStatistics(values: day.values, minutes: day.minutes, expectedMinutes: totalMinutes * dayShare),
+            GlucoseStatistics(values: night.values, minutes: night.minutes, expectedMinutes: totalMinutes * (1 - dayShare))
         )
     }
 

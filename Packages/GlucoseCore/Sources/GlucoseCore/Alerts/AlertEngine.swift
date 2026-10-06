@@ -346,6 +346,23 @@ public struct AlertEngine: Sendable {
         return trendStates[ruleID]?.fired ?? false
     }
 
+    // MARK: Calibration changes
+
+    /// Recomputes the trend window with a new calibration and re-arms the trend alerts, so the
+    /// step between old and new values isn't read as a fast rise or fall. Snoozes are kept.
+    public mutating func recalibrate(sensorSerial: String, calibration: Calibration) {
+        recent = recent.map { reading in
+            guard reading.sensorSerial == sensorSerial else { return reading }
+            return reading.recalibrated(with: calibration) ?? reading
+        }
+        trendStates = trendStates.mapValues { state in
+            var state = state
+            state.fired = false
+            return state
+        }
+        if let last = recent.last { record(last.timestamp, "recalibrated the trend window") }
+    }
+
     // MARK: Clock changes
 
     /// Moves every stored time by `interval`, for when readings were re-dated after the phone clock

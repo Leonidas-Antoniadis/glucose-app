@@ -506,28 +506,80 @@ final class AppModel {
     /// Records a fingerstick. Returns a message describing what happened.
     @discardableResult
     func addFingerstick(mgdL: Double, date: Date, calibrate: Bool) -> String {
-        var usedForCalibration = false
+        var pointID: UUID?
         var message = "Fingerstick saved."
         if calibrate {
-            if isDemo {
-                message = "Saved. Calibration only applies to a real sensor."
-            } else if sensor.calibrate(referenceMgdL: mgdL, at: date) {
-                usedForCalibration = true
-                message = "Calibrated. New readings use this fingerstick."
-            } else {
-                message = "Saved, but not used for calibration: no sensor value from the last 10 minutes."
-            }
+            message = calibrateSensor(mgdL: mgdL, date: date, pointID: &pointID)
         }
-        fingersticks.append(FingerstickEntry(date: date, mgdL: mgdL, usedForCalibration: usedForCalibration,
-                                             sensorSerial: sensor.record?.serial))
+        fingersticks.append(FingerstickEntry(date: date, mgdL: mgdL, usedForCalibration: pointID != nil,
+                                             sensorSerial: sensor.record?.serial, calibrationPointID: pointID))
         fingersticks.sort { $0.date > $1.date }
         try? stores.fingersticks.save(fingersticks)
         return message
     }
 
+    /// Offers a fingerstick to the sensor's calibration and says what happened.
+    private func calibrateSensor(mgdL: Double, date: Date, pointID: inout UUID?) -> String {
+        guard !isDemo else { return "Saved. Calibration only applies to a real sensor." }
+        guard let record = sensor.record else { return "Saved, but not used for calibration: no sensor is paired." }
+        if record.ageMinutes(at: date) < LibreSensorRecord.warmUpMinutes {
+            let ready = record.warmUpEndsAt.formatted(date: .omitted, time: .shortened)
+            return "Saved, but not used for calibration: the sensor is still warming up. Calibrate after \(ready)."
+        }
+        // The raw value at the fingerstick's time, not the latest one: glucose may have moved since.
+        let nearby = readings.filter {
+            $0.sensorSerial == record.serial && $0.raw != nil && abs($0.timestamp.timeIntervalSince(date)) <= 3 * 60
+        }
+        guard let closest = nearby.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) }),
+              let raw = closest.raw else {
+            return "Saved, but not used for calibration: no sensor value within 3 minutes of that time."
+        }
+        switch sensor.calibrate(referenceMgdL: mgdL, raw: raw, at: date) {
+        case .applied(let id)?:
+            pointID = id
+            recalibrateRecent()
+            return "Calibrated. Values from the last 30 minutes and new readings use this fingerstick."
+        case .warmingUp?:
+            return "Saved, but not used for calibration: the sensor is still warming up."
+        case .needsConfirmation(let sensorMgdL)?:
+            return "Saved, but not used for calibration yet: it's far from the sensor's \(unit.format(mgdL: sensorMgdL, includeSymbol: true)). Wash and dry your hands and test again. If a second fingerstick within 30 minutes agrees, it will be used."
+        case nil:
+            return "Saved, but not used for calibration: no sensor is paired."
+        }
+    }
+
+    /// After the calibration changed, recomputes the last 30 minutes with it, so old and new values
+    /// don't form a step that reads as a fast rise or fall (false arrows and "Low soon" alerts).
+    private func recalibrateRecent() {
+        guard let record = sensor.record else { return }
+        let since = Date().addingTimeInterval(-30 * 60)
+        readings = ReadingPipeline.recalibrated(readings, sensorSerial: record.serial, since: since,
+                                                calibration: record.calibration)
+        engine.recalibrate(sensorSerial: record.serial, calibration: record.calibration)
+        saveAlertState(force: true)
+        do {
+            try stores.archive?.recalibrate(sensorSerial: record.serial, since: since, calibration: record.calibration)
+        } catch {
+            lastError = "Couldn't update saved readings: \(error.localizedDescription)"
+        }
+        if let latest {
+            surfaces.update(latest: latest, arrow: trendArrow, recent: readings(lastHours: 3), unit: unit,
+                            liveActivityEnabled: settings.liveActivity)
+        }
+    }
+
+    /// Deletes fingersticks. A calibration fingerstick also leaves the sensor's calibration.
     func deleteFingersticks(_ ids: Set<UUID>) {
+        let removed = fingersticks.filter { ids.contains($0.id) }
         fingersticks.removeAll { ids.contains($0.id) }
         try? stores.fingersticks.save(fingersticks)
+        var calibrationChanged = false
+        for stick in removed where stick.usedForCalibration {
+            if sensor.removeCalibration(pointID: stick.calibrationPointID, date: stick.date, mgdL: stick.mgdL) {
+                calibrationChanged = true
+            }
+        }
+        if calibrationChanged { recalibrateRecent() }
     }
 
     var accuracy: AccuracyReport {

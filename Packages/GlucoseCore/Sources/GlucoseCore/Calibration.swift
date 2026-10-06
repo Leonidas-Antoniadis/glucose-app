@@ -86,7 +86,11 @@ public struct Calibration: Codable, Hashable, Sendable {
                 covariance += weight * (point.raw - meanRaw) * (point.referenceMgdL - meanRef)
                 variance += weight * (point.raw - meanRaw) * (point.raw - meanRaw)
             }
-            if variance > 0 {
+            // Only a positive relation between raw signal and fingersticks gives a slope. Points that
+            // contradict each other (a contaminated finger, a stick during a fast change) would be
+            // clamped to the flattest slope and squeeze every value toward the mean, showing lows as
+            // in range. Then the default slope stays and only the offset is fitted.
+            if variance > 0, covariance > 0 {
                 slope = min(max(covariance / variance, slopeRange.lowerBound), slopeRange.upperBound)
             }
         }
@@ -102,14 +106,28 @@ public struct FingerstickEntry: Codable, Hashable, Identifiable, Sendable {
     public var mgdL: Double
     public var usedForCalibration: Bool
     public var sensorSerial: String?
+    /// The calibration point this fingerstick added, so deleting it can undo the calibration.
+    public var calibrationPointID: UUID?
 
-    public init(id: UUID = UUID(), date: Date, mgdL: Double, usedForCalibration: Bool, sensorSerial: String? = nil) {
+    public init(id: UUID = UUID(), date: Date, mgdL: Double, usedForCalibration: Bool, sensorSerial: String? = nil,
+                calibrationPointID: UUID? = nil) {
         self.id = id
         self.date = date
         self.mgdL = mgdL
         self.usedForCalibration = usedForCalibration
         self.sensorSerial = sensorSerial
+        self.calibrationPointID = calibrationPointID
     }
+}
+
+/// What happened to a fingerstick offered for calibration.
+public enum CalibrationOutcome: Equatable, Sendable {
+    /// Used: the new calibration applies. `pointID` identifies the calibration point.
+    case applied(pointID: UUID)
+    /// The sensor is still warming up; its signal isn't reliable yet.
+    case warmingUp
+    /// Far from what the sensor shows (`sensorMgdL`). Not used until a second fingerstick agrees.
+    case needsConfirmation(sensorMgdL: Double)
 }
 
 /// Sensor accuracy against fingersticks that were *not* used for calibration.
