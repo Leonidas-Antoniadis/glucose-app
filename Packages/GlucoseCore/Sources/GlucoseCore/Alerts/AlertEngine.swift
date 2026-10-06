@@ -198,10 +198,11 @@ public struct AlertEngine: Sendable {
 
             // 3. Less severe rules are covered by the top one. They count as notified now, so
             // once the top rule stops they remind on their own interval unless acknowledged.
+            let topSnooze = states[top.id]?.snoozedUntil
             for rule in active.dropFirst() where states[rule.id]?.firedAt == nil {
                 states[rule.id]?.firedAt = now
                 states[rule.id]?.lastNotifiedAt = now
-                states[rule.id]?.snoozedUntil = states[top.id]?.snoozedUntil
+                states[rule.id]?.snoozedUntil = topSnooze
                 record(now, "suppressed \(rule.name) (covered by \(top.name)) at \(value)")
             }
 
