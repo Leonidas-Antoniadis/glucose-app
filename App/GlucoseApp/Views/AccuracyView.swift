@@ -219,44 +219,75 @@ private struct BreakdownRow: View {
     let summary: AccuracyReport.Summary?
     let overall: Double
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    Text(title)
-                    if let summary, summary.isTooFew {
-                        Text("too few")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.15), in: Capsule())
-                            .foregroundStyle(.secondary)
+        // Side by side at normal sizes; at large text the title goes above the bar, so neither
+        // the "too few" chip nor the numbers get cut off.
+        Group {
+            if dynamicTypeSize >= .xxLarge {
+                VStack(alignment: .leading, spacing: 4) {
+                    titleBlock
+                    HStack(spacing: 10) {
+                        bar
+                        value
                     }
                 }
-                if let subtitle {
-                    Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+            } else {
+                HStack(spacing: 10) {
+                    titleBlock
+                        .frame(minWidth: 110, alignment: .leading)
+                        .layoutPriority(1)
+                    bar
+                        .frame(minWidth: 40)
+                    value
                 }
             }
-            .frame(width: 150, alignment: .leading)
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.12))
-                    if let summary {
-                        Capsule().fill(color(summary))
-                            .frame(width: proxy.size.width * min(summary.mard / 30, 1))
-                    }
-                }
-            }
-            .frame(height: 8)
-            Text(summary.map { String(format: "%.1f %% · n=%d", $0.mard, $0.count) } ?? "no checks")
-                .font(.caption)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .frame(width: 92, alignment: .trailing)
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(summary.map { String(format: "%@: %.1f percent from %d checks", title, $0.mard, $0.count) } ?? "\(title): no checks")
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 6) {
+                Text(title)
+                if let summary, summary.isTooFew {
+                    Text("too few")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+            }
+            if let subtitle {
+                Text(subtitle).font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var bar: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.12))
+                if let summary {
+                    Capsule().fill(color(summary))
+                        .frame(width: proxy.size.width * min(summary.mard / 30, 1))
+                }
+            }
+        }
+        .frame(height: 8)
+    }
+
+    private var value: some View {
+        Text(summary.map { String(format: "%.1f %% · n=%d", $0.mard, $0.count) } ?? "no checks")
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .fixedSize()
     }
 
     /// Orange where it's clearly worse than overall, grey where there are too few checks to tell.

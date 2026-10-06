@@ -126,17 +126,19 @@ struct GlucoseChart: View {
                 .chartScrollPosition(x: $scrollPosition)
                 .chartXSelection(value: $selectedDate)
                 .accessibilityLabel("Glucose chart")
-
+            }
+            // Under the chart, so it never covers the axis labels or the note icons.
+            HStack(alignment: .center) {
+                Text("Swipe to go back in time. Touch and hold, then slide, to read past values.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 if isScrolledBack(end: end) {
+                    Spacer(minLength: 8)
                     Button("Now", systemImage: "arrow.right.to.line") { jumpToNow(end: end) }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .padding(4)
                 }
             }
-            Text("Swipe to go back in time. Touch and hold, then slide, to read past values.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         .onAppear {
             jumpToNow(end: end)
@@ -249,7 +251,7 @@ struct MetricRow: View {
             Text(label)
             Spacer()
             if warning {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(RangePalette.warningText)
             }
             Text(value).monospacedDigit().foregroundStyle(.secondary)
         }

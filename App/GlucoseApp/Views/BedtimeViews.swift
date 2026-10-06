@@ -33,7 +33,7 @@ struct BedtimeCard: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background((toFix.isEmpty ? RangePalette.color(zone: 2) : Color.orange).opacity(0.18), in: Capsule())
-                    .foregroundStyle(toFix.isEmpty ? RangePalette.color(zone: 2) : Color.orange)
+                    .foregroundStyle(toFix.isEmpty ? RangePalette.color(zone: 2) : RangePalette.warningText)
             }
             BedtimeChecklist(items: items, compact: true)
             if !tonight.isEmpty {
@@ -179,8 +179,8 @@ struct BedtimeChecklist: View {
 
     private func color(_ status: BedtimeItem.Status) -> Color {
         switch status {
-        case .problem: return .red
-        case .warning: return .orange
+        case .problem: return RangePalette.color(zone: 0)
+        case .warning: return RangePalette.warningText
         case .ok: return RangePalette.color(zone: 2)
         }
     }

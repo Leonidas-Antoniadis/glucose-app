@@ -17,10 +17,13 @@ struct SensorView: View {
                 if let record = model.isDemo ? sensor.demoRecord : sensor.record {
                     MetricRow(label: "Type", value: record.type.displayName)
                     MetricRow(label: "Serial (computed)", value: record.serial)
-                    MetricRow(label: "Started", value: record.activatedAt.formatted(date: .abbreviated, time: .shortened))
-                    MetricRow(label: "Ends", value: record.expiresAt.formatted(date: .abbreviated, time: .shortened),
-                              warning: record.expiresAt.timeIntervalSinceNow < 86_400)
-                    if let last = sensor.lastPacketAt {
+                    // The demo's endless sensor shows the same start and end as its Wear section.
+                    let started = model.isDemo ? (model.wearContext?.activatedAt ?? record.activatedAt) : record.activatedAt
+                    let ends = model.isDemo ? (model.wearContext?.expiresAt ?? record.expiresAt) : record.expiresAt
+                    MetricRow(label: "Started", value: started.formatted(date: .abbreviated, time: .shortened))
+                    MetricRow(label: "Ends", value: ends.formatted(date: .abbreviated, time: .shortened),
+                              warning: ends.timeIntervalSinceNow < 86_400)
+                    if !model.isDemo, let last = sensor.lastPacketAt {
                         MetricRow(label: "Last Bluetooth packet", value: last.formatted(date: .omitted, time: .standard))
                     }
                 }

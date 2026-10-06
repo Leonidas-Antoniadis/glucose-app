@@ -92,12 +92,16 @@ struct QuickLogChip: View {
 /// so a dose isn't taken twice by mistake.
 struct LastLoggedTiles: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         TimelineView(.everyMinute) { context in
             let fast = QuickLog.lastInsulin(.rapid, in: model.logbook)
             let slow = QuickLog.lastInsulin(.long, in: model.logbook)
-            HStack(spacing: 8) {
+            // At accessibility text sizes three tiles side by side would cut off the times they
+            // exist to show, so they stack.
+            let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
+            layout {
                 tile(.fastInsulin, amount: fast.map { "\(LogEntry.format($0.units)) U" }, date: fast?.date, now: context.date)
                 tile(.food, amount: nil, date: QuickLog.lastMeal(in: model.logbook), now: context.date)
                 tile(.slowInsulin, amount: slow.map { "\(LogEntry.format($0.units)) U" }, date: slow?.date, now: context.date)

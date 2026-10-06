@@ -29,14 +29,16 @@ enum QuickLogKind: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Used as text and as a pale tint behind it, so the light-mode values are dark enough to read
+    /// (system orange and green on their own tint aren't).
     var tint: Color {
         switch self {
-        case .fastInsulin: return .orange
-        case .slowInsulin: return .purple
-        case .food: return .green
-        case .exercise: return .teal
-        case .bloodGlucose: return .red
-        case .note: return .gray
+        case .fastInsulin: return RangePalette.adaptive(light: (0.72, 0.33, 0.00), dark: (1.00, 0.62, 0.04))
+        case .slowInsulin: return RangePalette.adaptive(light: (0.47, 0.24, 0.70), dark: (0.80, 0.56, 1.00))
+        case .food: return RangePalette.adaptive(light: (0.12, 0.47, 0.20), dark: (0.19, 0.82, 0.35))
+        case .exercise: return RangePalette.adaptive(light: (0.00, 0.45, 0.48), dark: (0.35, 0.80, 0.85))
+        case .bloodGlucose: return RangePalette.adaptive(light: (0.74, 0.09, 0.13), dark: (1.00, 0.35, 0.33))
+        case .note: return RangePalette.adaptive(light: (0.38, 0.38, 0.42), dark: (0.68, 0.68, 0.72))
         }
     }
 }
@@ -224,7 +226,7 @@ struct AddLogEntryView: View {
                             if !libreLinkValid {
                                 Text("Type the value in \(model.unit.symbol), as LibreLink shows it.")
                                     .font(.caption)
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(RangePalette.warningText)
                             }
                         }
                     case .note:

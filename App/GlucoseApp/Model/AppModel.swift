@@ -19,6 +19,9 @@ final class AppModel {
     var isLocked = false
     /// Goes up each time the Face ID lock engages: views with sheets close them when it changes.
     private(set) var lockCount = 0
+    /// Covers the screen while the app is inactive with the Face ID lock on, so the App Switcher
+    /// snapshot shows no glucose data.
+    private(set) var privacyCover = false
     /// Whether iOS lets alerts marked Critical sound through Silent mode and Focus.
     private(set) var criticalAlertsAllowed = false
     /// Whether Time Sensitive notifications are on, so alerts show during Focus.
@@ -292,6 +295,7 @@ final class AppModel {
             notifications.cancelMissingData()
             startDemo()
         case .libre:
+            sensor.clearSimulated()
             let now = Date()
             readings = (try? stores.archive?.load(from: now.addingTimeInterval(-Self.memoryDays * 86_400),
                                                   to: now.addingTimeInterval(3600))) ?? []
@@ -1026,6 +1030,7 @@ final class AppModel {
     func scenePhaseChanged(_ phase: ScenePhase) {
         switch phase {
         case .active:
+            privacyCover = false
             let wasInactive = !isActive
             isActive = true
             if wasInactive {
@@ -1071,7 +1076,11 @@ final class AppModel {
             } else {
                 sensor.saveSignal(force: true)
             }
-        default:
+        case .inactive:
+            // iOS takes the App Switcher snapshot right after this, often before the lock is
+            // drawn on .background: with the Face ID lock on, cover the screen already.
+            if settings.biometricLock { privacyCover = true }
+        @unknown default:
             break
         }
     }

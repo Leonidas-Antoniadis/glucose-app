@@ -52,6 +52,11 @@ struct ReportsView: View {
                         Text("90 d").tag(90.0)
                     }
                     .pickerStyle(.segmented)
+                } footer: {
+                    // The period ends at the newest reading, which after a sensor gap isn't today.
+                    if let period = shown?.period {
+                        Text("\(period.start.formatted(.dateTime.day().month(.abbreviated).hour().minute())) – \(period.end.formatted(.dateTime.day().month(.abbreviated).hour().minute()))")
+                    }
                 }
 
                 if let shown, let stats = shown.stats {

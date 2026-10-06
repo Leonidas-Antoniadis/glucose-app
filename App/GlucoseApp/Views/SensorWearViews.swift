@@ -23,13 +23,10 @@ struct SensorWearSection: View {
                         .foregroundStyle(.secondary)
                     if !days.isEmpty {
                         WearStrip(days: days)
-                        HStack(spacing: 10) {
-                            Label("data captured", systemImage: "chart.bar.fill")
-                            HStack(spacing: 3) {
-                                Circle().fill(Color.red).frame(width: 5, height: 5)
-                                Text("calibration")
-                            }
-                            Text("% error that day")
+                        // One line when it fits, otherwise one item per line instead of cut off.
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 10) { legendItems }
+                            VStack(alignment: .leading, spacing: 2) { legendItems }
                         }
                         .labelStyle(CompactLabelStyle())
                         .font(.caption2)
@@ -44,6 +41,16 @@ struct SensorWearSection: View {
                 days = await model.wearDays()
             }
         }
+    }
+
+    @ViewBuilder
+    private var legendItems: some View {
+        Label("data captured", systemImage: "chart.bar.fill")
+        HStack(spacing: 3) {
+            Circle().fill(Color.red).frame(width: 5, height: 5)
+            Text("calibration")
+        }
+        Text("% error that day")
     }
 
     /// Recomputed every 15 minutes as readings arrive, and when fingersticks change.
@@ -96,10 +103,10 @@ struct WearStrip: View {
                         .font(.caption2.weight(day.isToday ? .bold : .regular))
                         .foregroundStyle(day.isToday ? .primary : .secondary)
                     Text(day.accuracy.map { String(format: "%.0f%%", $0.mard) } ?? " ")
-                        .font(.system(size: 9))
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                        .minimumScaleFactor(0.4)
                 }
                 .frame(maxWidth: .infinity)
             }

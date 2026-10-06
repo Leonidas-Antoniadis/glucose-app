@@ -72,9 +72,16 @@ struct StatusBanners: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
     @Environment(\.openURL) private var openURL
+    @State private var addingFingerstick = false
     var now = Date()
 
     var body: some View {
+        banners
+            .sheet(isPresented: $addingFingerstick) { AddFingerstickView() }
+            .onChange(of: model.lockCount) { addingFingerstick = false }
+    }
+
+    private var banners: some View {
         VStack(spacing: 8) {
             if model.isDemo {
                 Banner(systemImage: "play.circle", text: "Demo data. Pair a sensor in Settings → Data source.", color: .blue)
@@ -122,9 +129,11 @@ struct StatusBanners: View {
                 }
                 if let record = sensor.record {
                     if !record.calibration.isCalibrated {
-                        Banner(systemImage: "drop", text: "Values are uncalibrated estimates. Add a fingerstick to calibrate.")
+                        ActionBanner(systemImage: "drop", text: "Values are uncalibrated estimates. Add a fingerstick to calibrate.",
+                                     actions: [("Add fingerstick", { addingFingerstick = true })])
                     } else if record.calibration.needsCalibration(now: Date()) {
-                        Banner(systemImage: "drop", text: "Last calibration is over a day old. Add a fingerstick.")
+                        ActionBanner(systemImage: "drop", text: "Last calibration is over a day old. Add a fingerstick.",
+                                     actions: [("Add fingerstick", { addingFingerstick = true })])
                     }
                 } else {
                     Banner(systemImage: "sensor.tag.radiowaves.forward", text: "No sensor paired. Tap the sensor icon to pair.")
@@ -193,13 +202,20 @@ struct CurrentValueCard: View {
                         .foregroundStyle(stale ? Color.secondary : RangeColor.color(for: latest.mgdL))
                         .strikethrough(stale)
                         .contentTransition(.numericText())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .layoutPriority(1)
                     Text(arrow.symbol)
                         .font(.system(size: 48, weight: .semibold))
-                        .accessibilityLabel(arrow.spokenName)
                     Text(model.unit.symbol)
                         .font(.headline)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
+                // One element for VoiceOver, which can't see grey or a strikethrough: it hears
+                // "115 mg/dL, rising, 2 minutes ago, old value".
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(valueDescription(latest, arrow: arrow, stale: stale))
                 if model.isDemo, model.settings.demoSpeed == .fast {
                     // 60x demo readings are dated ahead of the clock, so an age would be nonsense.
                     Text("Simulated, 60x speed")
@@ -222,6 +238,17 @@ struct CurrentValueCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func valueDescription(_ reading: GlucoseReading, arrow: TrendArrow, stale: Bool) -> String {
+        var parts = [model.unit.formatReading(mgdL: reading.mgdL, includeSymbol: true)]
+        if arrow != .unknown { parts.append(arrow.spokenName) }
+        let minutes = Int(now.timeIntervalSince(reading.timestamp) / 60)
+        if !(model.isDemo && model.settings.demoSpeed == .fast) {
+            parts.append(minutes < 1 ? "just now" : "\(minutes) minute\(minutes == 1 ? "" : "s") ago")
+        }
+        if stale { parts.append("old value") }
+        return parts.joined(separator: ", ")
     }
 }
 

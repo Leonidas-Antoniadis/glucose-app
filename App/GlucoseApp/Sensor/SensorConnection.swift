@@ -757,6 +757,15 @@ final class SensorConnection {
         stores.savedCaptures.delete()
     }
 
+    /// Drops the demo's simulated packets and scans when switching to the real sensor, so Raw
+    /// sensor data shows only what the sensor sent.
+    func clearSimulated() {
+        demoRecord = nil
+        demoRaw = nil
+        packets.removeAll { $0.isSimulated }
+        nfcRecords.removeAll { $0.isSimulated }
+    }
+
     /// Writes the saved captures to a text file for sharing.
     func exportSaved() -> URL? {
         let url = AppStores.exportsDirectory.appendingPathComponent("Libre captures.txt")

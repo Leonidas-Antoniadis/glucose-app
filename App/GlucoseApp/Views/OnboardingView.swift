@@ -16,7 +16,7 @@ struct OnboardingView: View {
                     page(icon: "drop.circle.fill", title: "Your glucose, on your phone only") {
                         Text("This app reads your FreeStyle Libre 2 or 2 Plus (EU) sensor directly over Bluetooth. Readings, alerts and reports stay on this iPhone. Nothing is sent to any cloud.")
                         VStack(alignment: .leading, spacing: 8) {
-                            Label("Not a medical device", systemImage: "exclamationmark.triangle.fill").font(.headline).foregroundStyle(.orange)
+                            Label("Not a medical device", systemImage: "exclamationmark.triangle.fill").font(.headline).foregroundStyle(RangePalette.warningText)
                             Text("It's a personal project without regulatory approval. Confirm with an approved meter before any insulin or treatment decision, and keep your reader or fingerstick meter as a backup.")
                         }
                         .padding()

@@ -15,7 +15,7 @@ struct AlertsView: View {
                     Section {
                         ForEach(issues, id: \.self) { issue in
                             Label(describe(issue), systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(RangePalette.warningText)
                         }
                     }
                 }
@@ -209,7 +209,7 @@ struct SoundPicker: View {
             if SoundCatalog.isMissing(sound) {
                 Text("This imported tune isn't on this phone (for example after restoring a backup), so the built-in alarm plays instead. Import it again or pick another tune.")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(RangePalette.warningText)
             }
         }
         if case .voice(let clip) = sound {

@@ -28,7 +28,9 @@ struct GlucoseProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (GlucoseEntry) -> Void) {
-        completion(GlucoseEntry(date: Date(), snapshot: context.isPreview ? .placeholder : (WidgetSnapshot.load() ?? .placeholder)))
+        // Only the gallery preview gets the made-up value: with no saved data the widget says
+        // "Open the app" instead of showing a value that looks current.
+        completion(GlucoseEntry(date: Date(), snapshot: context.isPreview ? .placeholder : WidgetSnapshot.load()))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<GlucoseEntry>) -> Void) {
@@ -66,6 +68,23 @@ struct GlucoseWidgetView: View {
         if let snapshot = entry.snapshot {
             let stale = entry.isStale
             let demo = snapshot.isDemo == true
+            Group {
+                content(snapshot, stale: stale, demo: demo)
+            }
+            // VoiceOver hears "115 mg/dL, rising" or "old value" instead of arrow glyph names.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(GlucoseShared.spokenValue(snapshot.formattedValue, unitRaw: snapshot.unitRaw,
+                                                          arrow: snapshot.arrow, stale: stale, demo: demo))
+        } else {
+            VStack(alignment: .leading) {
+                Text("--").font(.largeTitle.bold())
+                Text("Open the app").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(_ snapshot: WidgetSnapshot, stale: Bool, demo: Bool) -> some View {
             switch family {
             case .accessoryInline:
                 // The line above the clock has no room for colour: an old value says "old" instead of an arrow.
@@ -84,7 +103,7 @@ struct GlucoseWidgetView: View {
                             .strikethrough(stale)
                         Text(demo ? "Demo" : (stale ? "Old value" : "Now"))
                             .font(.caption2)
-                        Text(snapshot.timestamp, style: .relative).font(.caption)
+                        (Text(snapshot.timestamp, style: .relative) + Text(" ago")).font(.caption)
                     }
                     Spacer()
                 }
@@ -96,12 +115,6 @@ struct GlucoseWidgetView: View {
             default:
                 valueStack(snapshot, stale: stale, demo: demo)
             }
-        } else {
-            VStack(alignment: .leading) {
-                Text("--").font(.largeTitle.bold())
-                Text("Open the app").font(.caption).foregroundStyle(.secondary)
-            }
-        }
     }
 
     private func valueStack(_ snapshot: WidgetSnapshot, stale: Bool, demo: Bool) -> some View {
@@ -116,7 +129,7 @@ struct GlucoseWidgetView: View {
             }
             Text(demo ? "\(snapshot.unitSymbol) · DEMO" : snapshot.unitSymbol).font(.caption).foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Text(snapshot.timestamp, style: .relative).font(.caption2).foregroundStyle(.secondary)
+            (Text(snapshot.timestamp, style: .relative) + Text(" ago")).font(.caption2).foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -173,12 +186,12 @@ struct GlucoseLiveActivity: Widget {
                                 .font(.caption.bold())
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.75)
-                                .foregroundStyle(alert.isLow ? Color.red : Color.orange)
+                                .foregroundStyle(alert.isLow ? RangePalette.color(zone: 0) : RangePalette.warningText)
                         }
                         HStack {
                             Text(state.isDemo == true ? "Demo · \(GlucoseShared.unitSymbol(state.unitRaw))" : GlucoseShared.unitSymbol(state.unitRaw))
                             Spacer()
-                            Text(state.timestamp, style: .relative)
+                            Text(state.timestamp, style: .relative) + Text(" ago")
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -239,7 +252,7 @@ struct AlertButtons: View {
                     Label("Treating", systemImage: "drop.fill")
                         .frame(maxWidth: .infinity, minHeight: 32)
                         .background(Color.orange.opacity(0.22), in: RoundedRectangle(cornerRadius: 12))
-                        .foregroundStyle(Color.orange)
+                        .foregroundStyle(RangePalette.warningText)
                 }
                 .buttonStyle(.plain)
             }
@@ -270,7 +283,7 @@ struct LiveActivityLockScreenView: View {
                         .minimumScaleFactor(0.75)
                 }
                 .font(.caption.bold())
-                .foregroundStyle(alert.isLow ? Color.red : Color.orange)
+                .foregroundStyle(alert.isLow ? RangePalette.color(zone: 0) : RangePalette.warningText)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -292,6 +305,9 @@ struct LiveActivityLockScreenView: View {
                         .frame(width: 100, height: alert == nil ? 40 : 32)
                 }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(GlucoseShared.spokenValue(state.formattedValue, unitRaw: state.unitRaw, arrow: state.arrow,
+                                                          stale: stale, demo: state.isDemo == true))
             .padding(.horizontal, 16)
             .padding(.top, alert == nil ? 12 : 6)
             subline

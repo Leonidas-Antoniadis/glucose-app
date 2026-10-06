@@ -18,6 +18,20 @@ enum GlucoseShared {
         unitRaw == "mmolL" ? "mmol/L" : "mg/dL"
     }
 
+    /// What VoiceOver says for a widget or Live Activity value: "115 mg/dL, rising", with
+    /// "old value" or "demo" when that applies, instead of arrow glyph names.
+    static func spokenValue(_ value: String, unitRaw: String, arrow: String, stale: Bool, demo: Bool) -> String {
+        let arrows = ["↓": "falling quickly", "↘": "falling", "→": "steady", "↗": "rising", "↑": "rising quickly"]
+        var parts = [value == "LO" || value == "HI" ? value : "\(value) \(unitSymbol(unitRaw))"]
+        if stale {
+            parts.append("old value")
+        } else if let trend = arrows[arrow] {
+            parts.append(trend)
+        }
+        if demo { parts.append("demo") }
+        return parts.joined(separator: ", ")
+    }
+
     /// 0 very low, 1 low, 2 in range, 3 high, 4 very high.
     static func zone(mgdL: Double) -> Int {
         switch mgdL {
@@ -54,7 +68,11 @@ enum RangePalette {
         color(zone: GlucoseShared.zone(mgdL: mgdL))
     }
 
-    private static func adaptive(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+    /// Warning text (orange): dark enough to read on white and on a pale orange tint.
+    static var warningText: Color { adaptive(light: (0.70, 0.31, 0.00), dark: (1.00, 0.62, 0.04)) }
+
+    /// A color with its own light and dark values: darker in light mode so text stays readable.
+    static func adaptive(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
         Color(UIColor { traits in
             let rgb = traits.userInterfaceStyle == .dark ? dark : light
             return UIColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)

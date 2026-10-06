@@ -30,8 +30,10 @@ struct RootView: View {
                 OnboardingView()
             }
         }
+        // Behind the lock, VoiceOver mustn't read the screen either.
+        .accessibilityHidden(model.isLocked)
         .overlay {
-            if model.isLocked {
+            if model.isLocked || model.privacyCover {
                 LockView()
             }
         }
@@ -89,6 +91,7 @@ struct LockView: View {
     var body: some View {
         ZStack {
             Rectangle().fill(.ultraThickMaterial).ignoresSafeArea()
+                .accessibilityHidden(true)
             VStack(spacing: 16) {
                 Image(systemName: "lock.fill").font(.system(size: 44))
                 Text("Glucose is locked").font(.title2.bold())
@@ -96,6 +99,7 @@ struct LockView: View {
                     .buttonStyle(.borderedProminent)
             }
         }
+        .accessibilityAddTraits(.isModal)
     }
 }
 
