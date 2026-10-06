@@ -31,6 +31,11 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 | <img src="docs/screenshots/battery-lock-screen.png" width="230" alt="Settings with Show Live Activity again, Run in background and 91 days of data kept"> |
 | Bring back the Live Activity, save battery, 91 days kept |
 
+| Bedtime check | Sensor wear and signal | Accuracy |
+|:---:|:---:|:---:|
+| <img src="docs/screenshots/bedtime.png" width="230" alt="Ready for tonight card listing passed checks and tonight's summary"> | <img src="docs/screenshots/wear.png" width="230" alt="Day 9 of 15 with a strip of the sensor's days, Bluetooth signal and gaps"> | <img src="docs/screenshots/accuracy.png" width="230" alt="MARD with its 95% range, bias, LibreLink comparison and the consensus error grid"> |
+| What could keep an alarm from sounding tonight | Data captured per day, signal strength, gaps with reasons | MARD, error grid, LibreLink on the same checks |
+
 | Sensor | Raw sensor data | Packet bytes | Sensor history |
 |:---:|:---:|:---:|:---:|
 | <img src="docs/screenshots/sensor.png" width="175" alt="Sensor status, pairing and calibration"> | <img src="docs/screenshots/raw-data.png" width="175" alt="List of Bluetooth packets and NFC reads"> | <img src="docs/screenshots/packet.png" width="175" alt="One packet's bytes, encrypted and decrypted, colored by meaning"> | <img src="docs/screenshots/sensor-history.png" width="175" alt="Last 5 sensors with serials and end reasons"> |
@@ -41,14 +46,18 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 | Area | What it does |
 |---|---|
 | Sensor link | NFC pairing (takes over a sensor started with LibreLink), Bluetooth stream every minute, automatic reconnect and background restoration, NFC scan to fill gaps (8 h history) |
-| Values | Fingerstick calibration of the raw signal (Abbott's algorithm isn't public), accuracy tracking (MARD, 15/15 band), mg/dL and mmol/L |
+| Sensor wear | "Day 9 of 15" with a strip of the sensor's days (data captured, calibrations, error that day); Bluetooth strength, packets, reconnects, checksum errors and noise over 24 hours; every gap with its reason |
+| Values | Fingerstick calibration of the raw signal (Abbott's algorithm isn't public), mg/dL and mmol/L |
+| Accuracy | MARD with its 95% range, within 15/15 and 20/20, bias, a consensus (Parkes) error grid, where the sensor is weaker (range, sensor day, rate of change), the LibreLink value typed with a fingerstick compared on the same checks, CSV export |
 | Alerts | Up to 5 low + 5 high rules at any value from 40 to 400 mg/dL: silent / tune / voice, sound through Silent mode and Focus, repeat, snooze, schedule, confirmation delay, re-arm margin. Only the most severe crossed rule sounds |
 | Trend alerts | "Low soon" (20-minute projection), falling fast, rising fast |
+| Lock Screen alert | Notifications like "Lower · 64 mg/dL ↘ · −9 in 15 min. Below 70 since 3:01 AM." with a 2-hour chart; during an alert the Live Activity turns red (low) or orange (high) with Snooze and Treating buttons that work without opening the app |
+| Bedtime check | From an hour before bedtime, "Ready for tonight?" lists what could keep an alarm from sounding (volume, battery, Bluetooth, no-data alert, Silent mode, sensor or app build ending overnight) and how to fix it; a notification at bedtime if something needs fixing or no readings arrive |
 | Other alerts | Missing data (scheduled ahead, fires even if the app is killed), sensor ending, Bluetooth off, low phone battery, app build expiring |
 | Sounds | Separate low and high alarms (including ultra loud, high-pitched ones), chime, pulse, 9 voice clips, import your own tunes |
 | Reports | 1-90 days: time in ranges with consensus targets, mean, GMI, SD, CV, day/night, AGP, daily overlay, PDF and CSV export |
 | Logbook | Meals, insulin, exercise and notes, shown as chart markers. From the home screen: food in one tap, insulin with your usual doses, Undo, and when you last took insulin and ate |
-| Privacy | All data on the phone, excluded from iCloud backup, kept for 91 days then deleted, optional Face ID lock, password-encrypted backup file |
+| Privacy | All data on the phone, excluded from iCloud backup, kept for 91 days then deleted, optional Face ID lock (also covers the App Switcher), option to hide values on the Lock Screen, password-encrypted backup file |
 | Battery | "Run in background" switch: off stops the sensor connection while the app is closed (no alerts then) and resumes when you open it |
 | Surfaces | Home-screen and lock-screen widgets, Live Activity with Dynamic Island, button to bring the Live Activity back after swiping it away |
 | Demo | A simulated sensor (real time or 60x) to try everything without a sensor |
@@ -65,7 +74,8 @@ App/
   GlucoseWidget/             Widgets and Live Activity
   Shared/                    Code compiled into both
 tools/generate-sounds.ps1    Regenerates the alert sounds on Windows
-.github/workflows/           Linux tests; IPA build and simulator screenshots on macOS
+tools/testflight-upload.sh   Uploads to TestFlight from a Mac (CI does this on every push)
+.github/workflows/           Linux tests; IPA build and simulator screenshots on macOS; TestFlight upload
 ```
 
 ## Developing without a Mac
@@ -75,6 +85,7 @@ Everything compiles in the cloud on GitHub Actions:
 1. Push to `main`.
 2. **Core tests** run `swift test` on Linux.
 3. **iOS build** produces `GlucoseApp.ipa` (Actions → latest run → Artifacts) and a **screenshots** artifact with every screen, captured in the iOS Simulator.
+4. **TestFlight upload** runs the core tests again and, if they pass, uploads the build. Every push to `main` that changes `App/` or `Packages/` reaches testers in the internal group within minutes.
 
 ### Installing with TestFlight
 

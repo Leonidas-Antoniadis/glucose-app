@@ -65,10 +65,15 @@ struct SettingsView: View {
 
                 BatteryAndLockScreenSections()
 
-                Section("Privacy") {
+                Section {
                     Toggle("Lock with Face ID", isOn: $model.settings.biometricLock)
+                    Toggle("Hide values on Lock Screen", isOn: $model.settings.hideValuesOnLockScreen)
                     NavigationLink("Backup and restore") { BackupView() }
                     Button("Delete all data", role: .destructive) { confirmDelete = true }
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text("Hide values on Lock Screen: alert notifications, the Live Activity and Lock Screen widgets say there's an alert without showing glucose. Alerts still sound.")
                 }
 
                 Section("Diagnostics") {
@@ -108,7 +113,7 @@ struct SettingsView: View {
             .confirmationDialog("Delete all data?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete everything", role: .destructive) { model.deleteAllData() }
             } message: {
-                Text("Readings, notes, fingersticks and the sensor pairing are erased from this phone. Settings are kept.")
+                Text("Readings, notes, fingersticks, the sensor pairing and the sensor history are erased from this phone. Settings and imported tunes are kept.")
             }
         }
     }

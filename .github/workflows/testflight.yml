@@ -97,7 +97,7 @@ jobs:
           set -o pipefail
           KEY_PATH="$RUNNER_TEMP/AuthKey_${KEY_ID}.p8"
           printf '%s' "$KEY_P8" > "$KEY_PATH"
-          BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+          BUILD_NUMBER="$(date -u +%Y%m%d%H%M)"
           AUTH="-authenticationKeyPath $KEY_PATH -authenticationKeyID $KEY_ID -authenticationKeyIssuerID $ISSUER_ID"
           cat > ExportOptions.plist <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>

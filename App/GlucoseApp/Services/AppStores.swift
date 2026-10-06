@@ -34,7 +34,7 @@ struct AppStores {
         sensor = JSONFileStore(url: directory.appendingPathComponent("sensor.json"))
         logbook = JSONFileStore(url: directory.appendingPathComponent("logbook.json"))
         fingersticks = JSONFileStore(url: directory.appendingPathComponent("fingersticks.json"))
-        // Kept on "Delete all data", since it's what support asks for.
+        // Serials and notes for support calls; erased by "Delete all data" too.
         sensorHistory = JSONFileStore(url: directory.appendingPathComponent("sensor-history.json"))
         savedCaptures = JSONFileStore(url: directory.appendingPathComponent("saved-captures.json"))
         alertState = JSONFileStore(url: directory.appendingPathComponent("alert-state.json"))
@@ -97,8 +97,23 @@ struct AppStores {
     /// "Delete all data" and the next launch can remove every copy left behind.
     static var exportsDirectory: URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Exports", isDirectory: true)
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        // Files made here are readable only while the phone is unlocked.
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true,
+                                                 attributes: [.protectionKey: FileProtectionType.complete])
         return url
+    }
+
+    /// Removes exports older than `age` seconds, when the app leaves the screen: long enough for
+    /// a share in progress to finish, short enough that a CSV of every reading doesn't stay for
+    /// weeks while the app keeps running in the background.
+    static func clearExports(olderThan age: TimeInterval) {
+        let fileManager = FileManager.default
+        let folder = fileManager.temporaryDirectory.appendingPathComponent("Exports", isDirectory: true)
+        let files = (try? fileManager.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+        for file in files {
+            let modified = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
+            if Date().timeIntervalSince(modified) > age { try? fileManager.removeItem(at: file) }
+        }
     }
 
     static func clearExports() {

@@ -478,6 +478,7 @@ final class AppModel {
         var extras = LiveActivityExtras()
         extras.points = Array(ReadingPipeline.sparkline(readings(lastHours: 1)).map(\.mgdL).suffix(13))
         extras.change15 = AlertMessage.change(in: readings(lastHours: 0.5))
+        extras.hidesValue = settings.hideValuesOnLockScreen
         // The most severe threshold rule still sounding, lows first, read from the alert engine
         // (saved across relaunches) rather than the in-memory list of recent alerts. A trend
         // alert has no "since", so it doesn't get the banner.
@@ -496,6 +497,10 @@ final class AppModel {
     private func alertDetails(for event: AlertEvent) -> NotificationService.AlertDetails {
         let rule = settings.ruleSet.rules.first { $0.id == event.ruleID }
         let since = rule == nil ? nil : engine.states[event.ruleID]?.crossedSince
+        if settings.hideValuesOnLockScreen {
+            // The Lock Screen, and a paired Watch, learn only that there's an alert.
+            return NotificationService.AlertDetails(title: event.ruleName, body: "Open Glucose to see the value.", chartURL: nil)
+        }
         return NotificationService.AlertDetails(
             title: AlertMessage.title(for: event, unit: unit, arrow: trendArrow(at: event.date)),
             body: AlertMessage.body(for: event, unit: unit, change15: AlertMessage.change(in: readings(lastHours: 0.5)),
@@ -772,6 +777,9 @@ final class AppModel {
         }
         if old.liveActivity && !settings.liveActivity {
             surfaces.endLiveActivity()
+        }
+        if old.hideValuesOnLockScreen != settings.hideValuesOnLockScreen {
+            updateSurfaces()
         }
     }
 
@@ -1058,6 +1066,7 @@ final class AppModel {
             }
         case .background:
             isActive = false
+            AppStores.clearExports(olderThan: 10 * 60)
             if settings.biometricLock {
                 isLocked = true
                 // The lock covers the app's screens, but a sheet would stay usable on top of it.
@@ -1192,6 +1201,7 @@ final class AppModel {
         sensor.forget()
         sensor.clearCaptures()
         sensor.resetSignalStats()
+        sensor.clearHistory()
         stores.deleteEverything()
         archiveCache = nil
         engine.restoreLog([])

@@ -8,6 +8,8 @@ struct LiveActivityExtras: Equatable {
     var alert: ActivityAlert?
     var points: [Double]?
     var change15: Double?
+    /// "Hide values on Lock Screen" is on.
+    var hidesValue = false
 }
 
 /// Keeps the home-screen widgets and the lock-screen Live Activity current.
@@ -28,7 +30,8 @@ final class SurfaceUpdater {
         // One point per 5 minutes is plenty for a widget sparkline; it always ends at the value shown.
         let points = ReadingPipeline.sparkline(recent).map { WidgetSnapshot.Point(date: $0.timestamp, mgdL: $0.mgdL) }
         WidgetSnapshot(mgdL: latest.mgdL, timestamp: latest.timestamp, arrow: arrow.symbol,
-                       unitRaw: unit.rawValue, points: points, isDemo: isDemo).save()
+                       unitRaw: unit.rawValue, points: points, isDemo: isDemo,
+                       hidesValueOnLockScreen: extras.hidesValue).save()
 
         // Reloads while the app is open are free. In the background they come out of a daily budget,
         // so they're spaced out, except when glucose moves into a low range.
@@ -50,7 +53,7 @@ final class SurfaceUpdater {
                        extras: LiveActivityExtras) -> GlucoseActivityAttributes.ContentState {
         GlucoseActivityAttributes.ContentState(
             mgdL: latest.mgdL, arrow: arrow.symbol, timestamp: latest.timestamp, unitRaw: unit.rawValue, isDemo: isDemo,
-            alert: extras.alert, points: extras.points, change15: extras.change15)
+            alert: extras.alert, points: extras.points, change15: extras.change15, hidesValue: extras.hidesValue)
     }
 
     private func content(_ state: GlucoseActivityAttributes.ContentState) -> ActivityContent<GlucoseActivityAttributes.ContentState> {

@@ -16,6 +16,7 @@ This repo has no local Swift toolchain. GitHub Actions is the only compiler.
    ```
    - **Core tests** (`core-tests.yml`) run on every push: `swift test` on Linux for `Packages/GlucoseCore`.
    - **iOS build** (`ios-build.yml`) runs when `App/**` or `Packages/**` change: XcodeGen + xcodebuild on macOS, uploads the unsigned IPA.
+   - **TestFlight upload** (`testflight.yml`) runs on the same pushes: GlucoseCore tests, then archive and upload. The internal group gets every such push automatically (the owner chose this), so push only code that compiles and passes tests.
 4. Wait in the background, then read only what matters:
    ```bash
    gh run watch <id> --exit-status --interval 15 >/dev/null; echo $?
@@ -28,3 +29,5 @@ Gotchas:
 - Linux Foundation lacks some Apple APIs: keep `Packages/GlucoseCore` free of UIKit, CoreBluetooth, CoreNFC, CryptoKit and os.
 - App code is Swift 5 language mode; calling `@MainActor` code from delegate callbacks needs `MainActor.assumeIsolated`.
 - The Xcode project is generated from `App/project.yml`; never commit `.xcodeproj`.
+- Commits use the GitHub noreply email (repo-local `user.email`), so the personal address stays out of the public history.
+- Edit Swift files with the Edit tool: shell, perl or node one-liners drop the backslashes in `\(...)` interpolations and `\.keyPath`s.

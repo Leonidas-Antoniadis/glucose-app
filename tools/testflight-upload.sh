@@ -17,7 +17,7 @@ fi
 
 cd "$(dirname "$0")/.."
 BUILD_DIR="build/testflight"
-BUILD_NUMBER="$(date +%Y%m%d%H%M)"
+BUILD_NUMBER="$(date -u +%Y%m%d%H%M)"
 BUNDLE_ID="${BUNDLE_ID:-com.ncatechsolutions.glucoseapp}"
 
 command -v xcodegen >/dev/null || { echo "Installing XcodeGen…"; brew install xcodegen; }

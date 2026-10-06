@@ -73,8 +73,9 @@ struct GlucoseWidgetView: View {
             }
             // VoiceOver hears "115 mg/dL, rising" or "old value" instead of arrow glyph names.
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(GlucoseShared.spokenValue(snapshot.formattedValue, unitRaw: snapshot.unitRaw,
-                                                          arrow: snapshot.arrow, stale: stale, demo: demo))
+            .accessibilityLabel(GlucoseShared.spokenValue(
+                [.accessoryInline, .accessoryCircular, .accessoryRectangular].contains(family) ? snapshot.lockScreenValue : snapshot.formattedValue,
+                unitRaw: snapshot.unitRaw, arrow: snapshot.arrow, stale: stale, demo: demo))
         } else {
             VStack(alignment: .leading) {
                 Text("--").font(.largeTitle.bold())
@@ -88,17 +89,17 @@ struct GlucoseWidgetView: View {
             switch family {
             case .accessoryInline:
                 // The line above the clock has no room for colour: an old value says "old" instead of an arrow.
-                Text("\(demo ? "Demo " : "")\(snapshot.formattedValue) \(stale ? "old" : snapshot.arrow) \(snapshot.unitSymbol)")
+                Text("\(demo ? "Demo " : "")\(snapshot.lockScreenValue) \(stale ? "old" : snapshot.lockScreenArrow) \(snapshot.unitSymbol)")
             case .accessoryCircular:
                 VStack(spacing: 0) {
-                    Text(snapshot.formattedValue).font(.title3.bold()).minimumScaleFactor(0.6)
+                    Text(snapshot.lockScreenValue).font(.title3.bold()).minimumScaleFactor(0.6)
                         .strikethrough(stale)
-                    Text(stale ? "old" : (demo ? "demo" : snapshot.arrow)).font(.caption)
+                    Text(stale ? "old" : (demo ? "demo" : snapshot.lockScreenArrow)).font(.caption)
                 }
             case .accessoryRectangular:
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("\(snapshot.formattedValue) \(stale ? "" : snapshot.arrow)")
+                        Text("\(snapshot.lockScreenValue) \(stale ? "" : snapshot.lockScreenArrow)")
                             .font(.title2.bold())
                             .strikethrough(stale)
                         Text(demo ? "Demo" : (stale ? "Old value" : "Now"))
@@ -171,13 +172,13 @@ struct GlucoseLiveActivity: Widget {
             let color = stale ? Color.secondary : WidgetColors.color(mgdL: state.mgdL)
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(state.formattedValue)
+                    Text(state.shownValue)
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                         .foregroundStyle(color)
                         .strikethrough(stale)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(stale ? "old" : state.arrow).font(stale ? .headline : .largeTitle)
+                    Text(stale ? "old" : state.shownArrow).font(stale ? .headline : .largeTitle)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -201,14 +202,14 @@ struct GlucoseLiveActivity: Widget {
                     }
                 }
             } compactLeading: {
-                Text(state.formattedValue)
+                Text(state.shownValue)
                     .bold()
                     .foregroundStyle(stale ? color : state.alert.map { $0.isLow ? Color.red : Color.orange } ?? color)
                     .strikethrough(stale)
             } compactTrailing: {
-                Text(stale ? "old" : state.arrow)
+                Text(stale ? "old" : state.shownArrow)
             } minimal: {
-                Text(state.formattedValue)
+                Text(state.shownValue)
                     .font(.caption2.bold())
                     .foregroundStyle(color)
                     .strikethrough(stale)
@@ -290,23 +291,23 @@ struct LiveActivityLockScreenView: View {
                 .background((alert.isLow ? Color.red : Color.orange).opacity(0.18))
             }
             HStack(alignment: .center, spacing: 10) {
-                Text(state.formattedValue)
+                Text(state.shownValue)
                     .font(.system(size: alert == nil ? 44 : 36, weight: .bold, design: .rounded))
                     .foregroundStyle(valueColor)
                     .strikethrough(stale)
                     .lineLimit(1)
                     .layoutPriority(1)
-                Text(stale ? "old" : state.arrow)
+                Text(stale ? "old" : state.shownArrow)
                     .font(stale ? .headline : .title)
                     .foregroundStyle(valueColor)
                 Spacer(minLength: 4)
-                if let points = state.points, points.count >= 2 {
+                if let points = state.points, points.count >= 2, state.hidesValue != true {
                     LastHourLine(points: points, color: valueColor)
                         .frame(width: 100, height: alert == nil ? 40 : 32)
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(GlucoseShared.spokenValue(state.formattedValue, unitRaw: state.unitRaw, arrow: state.arrow,
+            .accessibilityLabel(GlucoseShared.spokenValue(state.shownValue, unitRaw: state.unitRaw, arrow: state.arrow,
                                                           stale: stale, demo: state.isDemo == true))
             .padding(.horizontal, 16)
             .padding(.top, alert == nil ? 12 : 6)

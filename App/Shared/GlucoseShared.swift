@@ -21,6 +21,7 @@ enum GlucoseShared {
     /// What VoiceOver says for a widget or Live Activity value: "115 mg/dL, rising", with
     /// "old value" or "demo" when that applies, instead of arrow glyph names.
     static func spokenValue(_ value: String, unitRaw: String, arrow: String, stale: Bool, demo: Bool) -> String {
+        if value == "•••" { return "Glucose value hidden" }
         let arrows = ["↓": "falling quickly", "↘": "falling", "→": "steady", "↗": "rising", "↑": "rising quickly"]
         var parts = [value == "LO" || value == "HI" ? value : "\(value) \(unitSymbol(unitRaw))"]
         if stale {
@@ -94,6 +95,8 @@ struct WidgetSnapshot: Codable, Hashable {
     var points: [Point]
     /// Simulated by the demo, so the widgets can say so.
     var isDemo: Bool? = nil
+    /// "Hide values on Lock Screen" is on: Lock Screen widgets show no value.
+    var hidesValueOnLockScreen: Bool? = nil
 
     private static let legacyKey = "latestSnapshot"
 
@@ -130,6 +133,9 @@ struct WidgetSnapshot: Codable, Hashable {
     }
 
     var formattedValue: String { GlucoseShared.format(mgdL: mgdL, unitRaw: unitRaw) }
+    /// For Lock Screen widgets: dots with "Hide values on Lock Screen" on.
+    var lockScreenValue: String { hidesValueOnLockScreen == true ? "•••" : formattedValue }
+    var lockScreenArrow: String { hidesValueOnLockScreen == true ? "" : arrow }
     var unitSymbol: String { GlucoseShared.unitSymbol(unitRaw) }
 
     static let placeholder = WidgetSnapshot(
@@ -162,12 +168,17 @@ struct GlucoseActivityAttributes: ActivityAttributes {
         var points: [Double]? = nil
         /// Change over the last 15 minutes, in mg/dL.
         var change15: Double? = nil
+        /// "Hide values on Lock Screen" is on: the card shows that there is an alert, not the value.
+        var hidesValue: Bool? = nil
 
         var formattedValue: String { GlucoseShared.format(mgdL: mgdL, unitRaw: unitRaw) }
+        /// What the card shows: the value, or dots with "Hide values on Lock Screen" on.
+        var shownValue: String { hidesValue == true ? "•••" : formattedValue }
+        var shownArrow: String { hidesValue == true ? "" : arrow }
 
         /// "−9", "+0.5" or "±0" in the display unit.
         var formattedChange: String? {
-            guard let change15 else { return nil }
+            guard let change15, hidesValue != true else { return nil }
             // Not `format`: that turns anything at or below 39 into "LO", and a change is small.
             let size = unitRaw == "mmolL" ? String(format: "%.1f", abs(change15) / 18.016) : String(Int(abs(change15).rounded()))
             if Double(size) == 0 { return "±0" }

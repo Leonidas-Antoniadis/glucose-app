@@ -53,13 +53,16 @@ struct AppSettings: Codable, Hashable {
     var bedtimeCheck = true
     /// Bedtime, in minutes after midnight. The check shows from an hour before.
     var bedtimeMinutes = 22 * 60
+    /// Keep glucose values off the Lock Screen: notifications, the Live Activity and Lock Screen
+    /// widgets say only that there is an alert.
+    var hideValuesOnLockScreen = false
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case unit, ruleSet, missingData, dataSource, demoSpeed, onboardingDone, biometricLock
         case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData, runInBackground
-        case bedtimeCheck, bedtimeMinutes
+        case bedtimeCheck, bedtimeMinutes, hideValuesOnLockScreen
     }
 
     init(from decoder: Decoder) throws {
@@ -81,5 +84,6 @@ struct AppSettings: Codable, Hashable {
         runInBackground = try c.decodeIfPresent(Bool.self, forKey: .runInBackground) ?? d.runInBackground
         bedtimeCheck = try c.decodeIfPresent(Bool.self, forKey: .bedtimeCheck) ?? d.bedtimeCheck
         bedtimeMinutes = try c.decodeIfPresent(Int.self, forKey: .bedtimeMinutes) ?? d.bedtimeMinutes
+        hideValuesOnLockScreen = try c.decodeIfPresent(Bool.self, forKey: .hideValuesOnLockScreen) ?? d.hideValuesOnLockScreen
     }
 }
