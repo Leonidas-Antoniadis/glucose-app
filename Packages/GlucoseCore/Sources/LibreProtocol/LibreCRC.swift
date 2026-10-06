@@ -24,10 +24,11 @@ public enum LibreCRC {
         return reversed
     }
 
-    /// FRAM sections store their CRC big-endian in the first two bytes.
+    /// FRAM sections store their CRC little-endian in the first two bytes (low byte first),
+    /// as DiaBLE reads it and as real captures confirm.
     public static func hasValidCRCInFirstTwoBytes(_ bytes: [UInt8]) -> Bool {
         guard bytes.count > 2 else { return false }
-        return crc16(bytes.dropFirst(2)) == (UInt16(bytes[0]) << 8 | UInt16(bytes[1]))
+        return crc16(bytes.dropFirst(2)) == (UInt16(bytes[1]) << 8 | UInt16(bytes[0]))
     }
 
     /// BLE packets store their CRC in the last two bytes (high byte last).
@@ -40,8 +41,8 @@ public enum LibreCRC {
     /// Writes a valid CRC into the first two bytes (used to build test fixtures).
     public static func sealFirstTwoBytes(_ bytes: inout [UInt8]) {
         let crc = crc16(bytes.dropFirst(2))
-        bytes[0] = UInt8(crc >> 8)
-        bytes[1] = UInt8(crc & 0xFF)
+        bytes[0] = UInt8(crc & 0xFF)
+        bytes[1] = UInt8(crc >> 8)
     }
 
     /// Writes a valid CRC into the last two bytes (used to build test fixtures).

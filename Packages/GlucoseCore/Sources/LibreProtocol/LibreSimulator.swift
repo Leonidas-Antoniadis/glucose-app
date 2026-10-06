@@ -13,7 +13,7 @@ public enum LibreSimulator {
     /// Plain 44-byte BLE payload for a sensor of age `ageMinutes`; `raw` gives the raw value per minute.
     public static func blePlaintext(ageMinutes: Int, temperature: Int = defaultTemperature, raw: (Int) -> Int) -> [UInt8] {
         var bytes = [UInt8](repeating: 0, count: LibreBLEPacket.decryptedSize)
-        let lastHistory = (ageMinutes - 3) / 15 * 15
+        let lastHistory = (ageMinutes - 2) / 15 * 15
         for i in 0..<10 {
             let minute = i < 7 ? ageMinutes - LibreBLEPacket.trendOffsets[i] : lastHistory - (i - 7) * 15
             let value = min(max(raw(max(0, minute)), 0), 0x3FFF)

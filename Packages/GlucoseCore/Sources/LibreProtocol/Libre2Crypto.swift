@@ -4,8 +4,9 @@ import Foundation
 /// Bluetooth stream.
 ///
 /// The algorithm follows the community's reverse-engineering, as published in open-source
-/// projects such as LibreTransmitter, DiaBLE and xDrip. It is **experimental**: this repository
-/// verifies it only for internal consistency, not against a real sensor.
+/// projects such as LibreTransmitter, DiaBLE and xDrip. It is **experimental**: the tests check it
+/// against LibreTransmitter's public captures from real sensors and against values computed with
+/// the reference code (`LibreCaptureTests`), but not yet against the user's own sensor.
 ///
 /// `uid` is the sensor UID in sensor byte order (the reverse of CoreNFC's `tag.identifier`),
 /// so `uid[7] == 0xE0` and `uid[6] == 0x07`.
@@ -102,12 +103,17 @@ public enum Libre2Crypto {
 
     // MARK: NFC enable streaming
 
-    /// Parameters for the NFC custom command 0xA1 that enables Bluetooth streaming:
-    /// the sub-command byte followed by four derived bytes.
+    /// Parameters for the NFC custom command 0xA1 that enables Bluetooth streaming: the sub-command
+    /// byte, the 4-byte unlock code (`enableTime`, little-endian) and four derived bytes. The sensor
+    /// later expects the same unlock code in the Bluetooth login.
     public static func enableStreamingParameters(uid: [UInt8], patchInfo: [UInt8]) throws -> [UInt8] {
         try validate(uid: uid, patchInfo: patchInfo)
-        let y = UInt16(enableTime & 0xFFFF) ^ word(patchInfo[5], patchInfo[4])
-        return [enableStreamingSubcommand] + usefulFunction(uid: uid, x: UInt16(enableStreamingSubcommand), y: y)
+        let code: [UInt8] = [
+            UInt8(enableTime & 0xFF), UInt8((enableTime >> 8) & 0xFF),
+            UInt8((enableTime >> 16) & 0xFF), UInt8((enableTime >> 24) & 0xFF),
+        ]
+        let y = word(code[1], code[0]) ^ word(patchInfo[5], patchInfo[4])
+        return [enableStreamingSubcommand] + code + usefulFunction(uid: uid, x: UInt16(enableStreamingSubcommand), y: y)
     }
 
     // MARK: NFC activate
@@ -143,10 +149,12 @@ public enum Libre2Crypto {
         let t2 = processCrypto(prepareVariables2(uid: uid, i1: t11, i2: t12, i3: t13, i4: t14))
         let t2Bytes = bytes(t2)
 
-        let t31 = LibreCRC.crc16([0xC1, 0xC4, 0xC3, 0xC0, 0xD4, 0xE1, 0xE7, 0xBA, t2Bytes[0], t2Bytes[1]]).byteSwapped
-        let t32 = LibreCRC.crc16(Array(t2Bytes[2..<8])).byteSwapped
-        let t33 = LibreCRC.crc16([ad[0], ad[1], ad[2], ad[3], ed[0], ed[1]]).byteSwapped
-        let t34 = LibreCRC.crc16([ed[2], ed[3], b[0], b[1], b[2], b[3]]).byteSwapped
+        // `LibreCRC.crc16` returns the plain bit-reversed CRC, as DiaBLE's does. LibreTransmitter
+        // byte-swaps here only to undo the swap inside its own crc16, so no swap belongs here.
+        let t31 = LibreCRC.crc16([0xC1, 0xC4, 0xC3, 0xC0, 0xD4, 0xE1, 0xE7, 0xBA, t2Bytes[0], t2Bytes[1]])
+        let t32 = LibreCRC.crc16(Array(t2Bytes[2..<8]))
+        let t33 = LibreCRC.crc16([ad[0], ad[1], ad[2], ad[3], ed[0], ed[1]])
+        let t34 = LibreCRC.crc16([ed[2], ed[3], b[0], b[1], b[2], b[3]])
         let t4 = processCrypto(prepareVariables2(uid: uid, i1: t31, i2: t32, i3: t33, i4: t34))
 
         return b + bytes(t4)

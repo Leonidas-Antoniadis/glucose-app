@@ -14,6 +14,7 @@ final class LibreProtocolTests: XCTestCase {
         var first: [UInt8] = [0, 0, 1, 2, 3, 4, 5]
         LibreCRC.sealFirstTwoBytes(&first)
         XCTAssertTrue(LibreCRC.hasValidCRCInFirstTwoBytes(first))
+        XCTAssertEqual(UInt16(first[1]) << 8 | UInt16(first[0]), LibreCRC.crc16(first.dropFirst(2)), "FRAM CRC is low byte first")
         first[4] ^= 0xFF
         XCTAssertFalse(LibreCRC.hasValidCRCInFirstTwoBytes(first))
 
@@ -37,6 +38,9 @@ final class LibreProtocolTests: XCTestCase {
         XCTAssertEqual(LibreSensorType(patchInfo: [0x9D, 0, 0, 0, 0, 0]), .libre2EU)
         XCTAssertEqual(LibreSensorType(patchInfo: [0xC5, 0, 0, 0, 0, 0]), .libre2EU)
         XCTAssertEqual(LibreSensorType(patchInfo: [0xC6, 0, 0, 0, 0, 0]), .libre2PlusEU)
+        XCTAssertEqual(LibreSensorType(patchInfo: [0x7F, 0x0E, 0x31, 0x01, 0, 0]), .libre2PlusEU, "Libre 2 Plus EU since mid-2025")
+        XCTAssertEqual(LibreSensorType(patchInfo: [0x7F, 0x0E, 0x30, 0x01, 0, 0]), .libre2EU, "Libre 2 EU since mid-2025")
+        XCTAssertTrue(LibreSensorType(patchInfo: [0x7F, 0x0E, 0x31, 0x01, 0, 0]).isSupported)
         XCTAssertEqual(LibreSensorType(patchInfo: [0x76, 0, 0, 0x02, 0, 0]), .libre2US)
         XCTAssertEqual(LibreSensorType(patchInfo: [0xDF, 0, 0, 0, 0, 0]), .libre1)
         XCTAssertEqual(LibreSensorType(patchInfo: []), .unknown)
@@ -65,8 +69,9 @@ final class LibreProtocolTests: XCTestCase {
         let uid = LibreFixtures.uid
         let patch = LibreFixtures.patchInfo
         let enable = try Libre2Crypto.enableStreamingParameters(uid: uid, patchInfo: patch)
-        XCTAssertEqual(enable.count, 5)
+        XCTAssertEqual(enable.count, 9)
         XCTAssertEqual(enable[0], 0x1E)
+        XCTAssertEqual(Array(enable[1...4]), [42, 0, 0, 0], "unlock code, little-endian")
         XCTAssertEqual(enable, try Libre2Crypto.enableStreamingParameters(uid: uid, patchInfo: patch))
 
         let first = try Libre2Crypto.streamingUnlockPayload(uid: uid, patchInfo: patch, unlockCount: 1)
@@ -159,9 +164,17 @@ final class LibreProtocolTests: XCTestCase {
         XCTAssertEqual(parsed.ageMinutes, 2000)
         XCTAssertEqual(parsed.trend.map(\.minuteIndex), [2000, 1998, 1996, 1994, 1993, 1988, 1985])
         XCTAssertEqual(parsed.trend.map(\.raw), [1500, 1501, 1502, 1503, 1504, 1505, 1506])
-        // (2000 - 3) / 15 * 15 = 1995
+        // (2000 - 2) / 15 * 15 = 1995
         XCTAssertEqual(parsed.history.map(\.minuteIndex), [1995, 1980, 1965])
         XCTAssertEqual(parsed.latest?.rawTemperature, 6000)
+    }
+
+    func testBLEHistoryLagsTwoMinutes() throws {
+        // At age % 15 == 2 the newest history slot is the current quarter hour, not the one before.
+        let parsed = try LibreBLEPacket(decrypted: LibreFixtures.plainBLE(age: 1802))
+        XCTAssertEqual(parsed.history.map(\.minuteIndex), [1800, 1785, 1770])
+        let earlier = try LibreBLEPacket(decrypted: LibreFixtures.plainBLE(age: 1801))
+        XCTAssertEqual(earlier.history.map(\.minuteIndex), [1785, 1770, 1755])
     }
 
     func testBLETamperedOrForeignPacketIsRejected() throws {

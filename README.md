@@ -99,7 +99,7 @@ For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.
 3. Add a **fingerstick** when glucose is steady, and at least once a day. Until then values are rough estimates (raw ÷ 8.5).
 4. Add some fingersticks *without* "Use to calibrate" to measure accuracy (MARD).
 
-The protocol follows community reverse-engineering and is verified here only with synthetic data. Before taking over a sensor, the app checks that its data decodes; if it doesn't, nothing on the sensor changes and LibreLink keeps working. Failed reads are kept under **Sensor → Raw sensor data** so they can be shared to fix decoding. Keep that file private: it contains your sensor's ID.
+The protocol follows community reverse-engineering (DiaBLE, LibreTransmitter). The tests check it against LibreTransmitter's public captures from real Libre 2 sensors and against values computed with the reference code, but it hasn't been tried on a sensor of our own yet. Before taking over a sensor, the app checks that its data decodes; if it doesn't, nothing on the sensor changes and LibreLink keeps working. Failed reads are kept under **Sensor → Raw sensor data** so they can be shared to fix decoding. Keep that file private: it contains your sensor's ID.
 
 ### Common situations
 

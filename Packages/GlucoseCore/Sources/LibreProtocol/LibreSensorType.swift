@@ -18,6 +18,9 @@ public enum LibreSensorType: String, Codable, CaseIterable, Sendable {
         case 0xE5, 0xE6: self = .libreUS14Day
         case 0x9D, 0xC5: self = .libre2EU
         case 0xC6: self = .libre2PlusEU
+        // European Libre 2 and 2 Plus sold since mid-2025 (same protocol, per DiaBLE):
+        // 7F 0E 30 01 is a Libre 2, 7F 0E 31 01 a Libre 2 Plus.
+        case 0x7F: self = patchInfo.count > 2 && patchInfo[2] & 0x0F != 0 ? .libre2PlusEU : .libre2EU
         case 0x76:
             switch patchInfo.count > 3 ? patchInfo[3] : 0 {
             case 0x02: self = .libre2US

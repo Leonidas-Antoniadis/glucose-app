@@ -123,7 +123,8 @@ public struct LibreBLEPacket: Sendable {
 
         var trend: [LibreRawReading] = []
         var history: [LibreRawReading] = []
-        let lastHistoryMinute = (age - 3) / 15 * 15
+        // Bluetooth history lags by 2 minutes (FRAM history by 3), as in DiaBLE and LibreTransmitter.
+        let lastHistoryMinute = (age - 2) / 15 * 15
         for i in 0..<10 {
             let isHistory = i >= 7
             let minute = isHistory ? lastHistoryMinute - (i - 7) * 15 : age - Self.trendOffsets[i]
