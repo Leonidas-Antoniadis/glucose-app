@@ -4,13 +4,7 @@ import GlucoseCore
 
 enum RangeColor {
     static func color(for mgdL: Double) -> Color {
-        switch mgdL {
-        case ..<54: return .red
-        case ..<70: return .orange
-        case ...180: return .green
-        case ...250: return .yellow
-        default: return .orange
-        }
+        RangePalette.color(mgdL: mgdL)
     }
 }
 
@@ -28,14 +22,31 @@ struct GlucoseChart: View {
 
     @State private var selectedDate: Date?
     @State private var scrollPosition = Date.distantPast
+    @Environment(\.scenePhase) private var scenePhase
+
+    private struct LinePoint: Identifiable {
+        let id: String
+        let date: Date
+        let value: Double
+        let segment: Int
+    }
 
     private var visibleSeconds: TimeInterval { visibleHours * 3600 }
 
     var body: some View {
         let start = readings.first?.timestamp ?? Date()
-        let end = readings.last?.timestamp ?? Date()
+        let lastReading = readings.last?.timestamp ?? Date()
+        // Entries logged after the newest reading (readings stopped) are still shown.
+        let end = max(lastReading, Date())
         let maxValue = max(300, readings.map(\.mgdL).max() ?? 0)
-        let topY = unit.fromMgdL(maxValue)
+        // Deep lows (down to LO, 39 mg/dL) stay inside the chart instead of running off its floor.
+        let minValue = (readings.map(\.mgdL).min() ?? 40) < 40 ? 30.0 : 40.0
+        // Notes sit on this line; the axis goes a little higher so their icons aren't cut in half.
+        let markerY = unit.fromMgdL(maxValue)
+        let topY = unit.fromMgdL(maxValue * 1.08)
+        let line = zip(readings, ReadingPipeline.segmentIndices(readings)).map { reading, segment in
+            LinePoint(id: reading.id, date: reading.timestamp, value: unit.fromMgdL(reading.mgdL), segment: segment)
+        }
 
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .topTrailing) {
@@ -48,23 +59,26 @@ struct GlucoseChart: View {
                     )
                     .foregroundStyle(.green.opacity(0.12))
 
-                    ForEach(alertLines.filter { (40...maxValue).contains($0.thresholdMgdL) }) { rule in
+                    ForEach(alertLines.filter { (minValue...maxValue).contains($0.thresholdMgdL) }) { rule in
                         RuleMark(y: .value("Alert", unit.fromMgdL(rule.thresholdMgdL)))
                             .foregroundStyle(rule.direction == .low ? Color.red : Color.orange)
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     }
 
-                    ForEach(readings) { reading in
+                    // One line per stretch without gaps: missing hours stay empty instead of being
+                    // bridged by a smooth line that could hide a low.
+                    ForEach(line) { point in
                         LineMark(
-                            x: .value("Time", reading.timestamp),
-                            y: .value("Glucose", unit.fromMgdL(reading.mgdL))
+                            x: .value("Time", point.date),
+                            y: .value("Glucose", point.value),
+                            series: .value("Segment", point.segment)
                         )
                         .interpolationMethod(.monotone)
                         .foregroundStyle(.primary)
                     }
 
                     ForEach(entries.filter { $0.date >= start && $0.date <= end }) { entry in
-                        PointMark(x: .value("Time", entry.date), y: .value("Note", topY))
+                        PointMark(x: .value("Time", entry.date), y: .value("Note", markerY))
                             .symbol {
                                 Image(systemName: entry.symbolName)
                                     .font(.caption2)
@@ -94,7 +108,7 @@ struct GlucoseChart: View {
                             }
                     }
                 }
-                .chartYScale(domain: unit.fromMgdL(40)...topY)
+                .chartYScale(domain: unit.fromMgdL(minValue)...topY)
                 .chartXAxis {
                     AxisMarks(values: .stride(by: .hour, count: axisStrideHours)) { value in
                         let date = value.as(Date.self)
@@ -127,10 +141,21 @@ struct GlucoseChart: View {
         .onAppear {
             jumpToNow(end: end)
             if ScreenshotMode.arguments.contains("-select") {
-                selectedDate = end.addingTimeInterval(-50 * 60)
+                selectedDate = lastReading.addingTimeInterval(-50 * 60)
             }
         }
         .onChange(of: visibleHours) { jumpToNow(end: end) }
+        // Follow new readings while the window shows "now"; leave it where it is if scrolled back.
+        .onChange(of: readings.last?.timestamp) { oldEnd, _ in
+            let previousEnd = max(oldEnd ?? .distantPast, Date().addingTimeInterval(-90))
+            if scrollPosition >= previousEnd.addingTimeInterval(-visibleSeconds - 3 * 60) {
+                jumpToNow(end: end)
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Coming back to the app (the view stays alive in the tab bar) shows the latest hours.
+            if phase == .active { jumpToNow(end: end) }
+        }
     }
 
     /// Hours between time labels, so a window always shows 3-4 short labels.

@@ -88,6 +88,9 @@ struct SensorView: View {
                     MetricRow(label: "MARD", value: String(format: "%.1f %%", mard), warning: mard > 15)
                     MetricRow(label: "Within 15 mg/dL or 15%", value: String(format: "%.0f %%", within * 100))
                     MetricRow(label: "Comparisons", value: "\(report.pairs.count)")
+                } else if model.isDemo {
+                    Text("Accuracy is measured against your own sensor, so it isn't shown for the demo.")
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("Add fingersticks without \"Use to calibrate\" to measure accuracy.")
                         .foregroundStyle(.secondary)

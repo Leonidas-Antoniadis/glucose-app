@@ -109,16 +109,25 @@ struct LastLoggedTiles: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             if let date, now.timeIntervalSince(date) < 24 * 3600 {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(date.formatted(date: .omitted, time: .shortened))
-                        .font(.headline)
-                    if let amount {
-                        Text(amount).font(.subheadline).foregroundStyle(.secondary)
+                // Side by side when it fits; a 12-hour time with a dose ("10:45 PM 12.5 U") doesn't
+                // in a third of a phone's width, so the dose then goes on its own line.
+                let time = Text(date.formatted(date: .omitted, time: .shortened)).font(.headline)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        time
+                        if let amount {
+                            Text(amount).font(.subheadline).foregroundStyle(.secondary)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        time.minimumScaleFactor(0.8)
+                        if let amount {
+                            Text(amount).font(.subheadline).foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
                 Text(Self.ago(date, now: now))
                     .font(.caption)
                     .foregroundStyle(.secondary)

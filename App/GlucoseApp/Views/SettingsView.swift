@@ -62,12 +62,7 @@ struct SettingsView: View {
                 Section("Diagnostics") {
                     NavigationLink("Raw sensor data") { RawDataView() }
                     NavigationLink("Sensor history") { SensorHistoryView() }
-                    NavigationLink("Alert decision log") {
-                        List(model.decisionLog, id: \.self) { line in
-                            Text(line).font(.caption.monospaced())
-                        }
-                        .navigationTitle("Decision log")
-                    }
+                    NavigationLink("Alert decision log") { DecisionLogView() }
                 }
 
                 Section("About") {
@@ -202,5 +197,23 @@ struct BatteryAndLockScreenSections: View {
         } footer: {
             Text("Readings, notes, fingersticks and raw captures older than \(Int(AppModel.archiveDays)) days are deleted automatically.")
         }
+    }
+}
+
+/// The alert engine's decisions, newest first. Reads the model's observed log, so new decisions
+/// appear while the screen is open.
+struct DecisionLogView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        List {
+            if model.decisionLog.isEmpty {
+                Text("No alert decisions yet.").foregroundStyle(.secondary)
+            }
+            ForEach(Array(model.decisionLog.enumerated()), id: \.offset) { _, line in
+                Text(line).font(.caption.monospaced())
+            }
+        }
+        .navigationTitle("Decision log")
     }
 }

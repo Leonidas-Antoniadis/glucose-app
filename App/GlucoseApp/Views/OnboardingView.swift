@@ -85,7 +85,10 @@ struct OnboardingView: View {
         switch preset {
         case 1: return "Night: louder, fewer alerts overnight, plus an always-on urgent low."
         case 2: return "Sensitive: earlier warnings with tighter thresholds."
-        default: return "Basic: below 80 silent, below 70 alarm, below 60 voice; above 180 silent, above 220 alarm, above 250 voice."
+        default:
+            let u = model.unit
+            return "Basic: below \(u.format(mgdL: 80)) silent, below \(u.format(mgdL: 70)) alarm, below \(u.format(mgdL: 60)) voice; "
+                + "above \(u.format(mgdL: 180)) silent, above \(u.format(mgdL: 220)) alarm, above \(u.format(mgdL: 250)) voice (\(u.symbol))."
         }
     }
 

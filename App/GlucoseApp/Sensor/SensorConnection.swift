@@ -438,8 +438,10 @@ final class SensorConnection {
     /// Fills the inspector with simulated packets that run through the real decoder.
     func startDemoInspector(startedAt: Date, currentMinute: Int, raw: @escaping (Int) -> Int) {
         demoRaw = raw
+        // The demo sensor never ends (at 60x it ages a day every 24 minutes). With a real
+        // lifetime the decoder would drop every packet past day 14 as "after the sensor ended".
         var demo = LibreSensorRecord(uid: LibreSimulator.demoUID, patchInfo: LibreSimulator.demoPatchInfo,
-                                     ageMinutes: currentMinute, maxLifeMinutes: 0, now: Date())
+                                     ageMinutes: currentMinute, maxLifeMinutes: currentMinute + 365 * 1440, now: Date())
         demo.activatedAt = startedAt
         demoRecord = demo
         packets.removeAll { $0.isSimulated }

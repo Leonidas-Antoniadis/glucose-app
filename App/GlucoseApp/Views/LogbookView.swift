@@ -144,12 +144,20 @@ struct LogbookView: View {
                 Text(entry.date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
             }
         case .stick(let stick):
-            HStack {
+            // Laid out like a note row: with the badge on the same line, "Blood glucose · 5.6 mmol/L"
+            // wrapped mid-value on narrow phones.
+            HStack(alignment: .top) {
                 Image(systemName: "drop.fill").foregroundStyle(.red).frame(width: 24)
-                Text("Blood glucose · \(model.unit.format(mgdL: stick.mgdL, includeSymbol: true))")
-                if stick.usedForCalibration {
-                    Text("calibration").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(.blue.opacity(0.15), in: Capsule())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Blood glucose")
+                    HStack(spacing: 6) {
+                        Text(model.unit.format(mgdL: stick.mgdL, includeSymbol: true))
+                            .font(.caption).foregroundStyle(.secondary)
+                        if stick.usedForCalibration {
+                            Text("calibration").font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(.blue.opacity(0.15), in: Capsule())
+                        }
+                    }
                 }
                 Spacer()
                 Text(stick.date.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)

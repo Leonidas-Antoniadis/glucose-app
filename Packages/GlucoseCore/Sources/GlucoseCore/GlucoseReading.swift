@@ -128,6 +128,39 @@ public enum ReadingPipeline {
         return weights
     }
 
+    /// A segment number per reading (`readings` sorted by time): a new segment starts after a gap
+    /// longer than `maxGapMinutes`, so a chart leaves missing hours empty instead of drawing a
+    /// smooth line across them, where a low could have been.
+    public static func segmentIndices(_ readings: [GlucoseReading], maxGapMinutes: Double = 15) -> [Int] {
+        var result: [Int] = []
+        result.reserveCapacity(readings.count)
+        var segment = 0
+        var previous: Date?
+        for reading in readings {
+            if let previous, reading.timestamp.timeIntervalSince(previous) > maxGapMinutes * 60 { segment += 1 }
+            result.append(segment)
+            previous = reading.timestamp
+        }
+        return result
+    }
+
+    /// Thins readings to one per `stepMinutes` for a small chart, always ending with the newest
+    /// reading so the line ends at the value shown next to it.
+    public static func sparkline(_ readings: [GlucoseReading], stepMinutes: Double = 5) -> [GlucoseReading] {
+        var result: [GlucoseReading] = []
+        for reading in readings {
+            if let last = result.last, reading.timestamp.timeIntervalSince(last.timestamp) < stepMinutes * 60 { continue }
+            result.append(reading)
+        }
+        if let newest = readings.last, result.last?.id != newest.id {
+            if let last = result.last, newest.timestamp.timeIntervalSince(last.timestamp) < stepMinutes * 60 {
+                result.removeLast()
+            }
+            result.append(newest)
+        }
+        return result
+    }
+
     /// Returns the gaps (in minutes of sensor time) inside a single sensor's series.
     public static func gaps(in readings: [GlucoseReading], sensorSerial: String) -> [ClosedRange<Int>] {
         let minutes = readings

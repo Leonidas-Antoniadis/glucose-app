@@ -1,5 +1,7 @@
 import Foundation
 import ActivityKit
+import SwiftUI
+import UIKit
 
 /// Compiled into both the app and the widget extension.
 enum GlucoseShared {
@@ -26,6 +28,38 @@ enum GlucoseShared {
         default: return 4
         }
     }
+
+    /// A value is stale when it's older than 10 minutes, or dated in the future (a clock change,
+    /// or the 60x demo), which an age check alone would show as current forever.
+    static func isStale(timestamp: Date, at date: Date) -> Bool {
+        date.timeIntervalSince(timestamp) > 10 * 60 || timestamp.timeIntervalSince(date) > 2 * 60
+    }
+}
+
+/// Range colors for the app and the widgets. Each range has its own hue (low and very high used
+/// to share one orange), darker in light mode so a large number stays readable on a light
+/// background (yellow wasn't), brighter in dark mode.
+enum RangePalette {
+    static func color(zone: Int) -> Color {
+        switch zone {
+        case 0: return adaptive(light: (0.73, 0.04, 0.12), dark: (1.00, 0.27, 0.23))   // very low: deep red
+        case 1: return adaptive(light: (0.89, 0.30, 0.25), dark: (1.00, 0.55, 0.50))   // low: coral red
+        case 2: return adaptive(light: (0.12, 0.55, 0.24), dark: (0.19, 0.82, 0.35))   // in range: green
+        case 3: return adaptive(light: (0.66, 0.47, 0.00), dark: (1.00, 0.84, 0.04))   // high: amber / yellow
+        default: return adaptive(light: (0.78, 0.33, 0.00), dark: (1.00, 0.62, 0.04))  // very high: orange
+        }
+    }
+
+    static func color(mgdL: Double) -> Color {
+        color(zone: GlucoseShared.zone(mgdL: mgdL))
+    }
+
+    private static func adaptive(light: (Double, Double, Double), dark: (Double, Double, Double)) -> Color {
+        Color(UIColor { traits in
+            let rgb = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
+        })
+    }
 }
 
 /// The latest value and a short history, written by the app for widgets.
@@ -40,17 +74,41 @@ struct WidgetSnapshot: Codable, Hashable {
     var arrow: String
     var unitRaw: String
     var points: [Point]
+    /// Simulated by the demo, so the widgets can say so.
+    var isDemo: Bool? = nil
 
-    private static let key = "latestSnapshot"
+    private static let legacyKey = "latestSnapshot"
+
+    /// A file in the shared container's Caches folder, which iCloud and computer backups skip.
+    /// (It used to sit in the shared UserDefaults, which are backed up.)
+    private static var fileURL: URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: GlucoseShared.appGroup)?
+            .appendingPathComponent("Library/Caches", isDirectory: true)
+            .appendingPathComponent("widget-snapshot.json")
+    }
 
     static func load() -> WidgetSnapshot? {
-        guard let data = UserDefaults(suiteName: GlucoseShared.appGroup)?.data(forKey: key) else { return nil }
+        if let url = fileURL, let data = try? Data(contentsOf: url) {
+            return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
+        }
+        guard let data = UserDefaults(suiteName: GlucoseShared.appGroup)?.data(forKey: legacyKey) else { return nil }
         return try? JSONDecoder().decode(WidgetSnapshot.self, from: data)
     }
 
     func save() {
-        guard let data = try? JSONEncoder().encode(self) else { return }
-        UserDefaults(suiteName: GlucoseShared.appGroup)?.set(data, forKey: Self.key)
+        guard let data = try? JSONEncoder().encode(self), var url = Self.fileURL else { return }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+        UserDefaults(suiteName: GlucoseShared.appGroup)?.removeObject(forKey: Self.legacyKey)
+    }
+
+    /// Removes the saved value, so widgets show "Open the app" instead of an old or demo value.
+    static func clear() {
+        if let url = fileURL { try? FileManager.default.removeItem(at: url) }
+        UserDefaults(suiteName: GlucoseShared.appGroup)?.removeObject(forKey: legacyKey)
     }
 
     var formattedValue: String { GlucoseShared.format(mgdL: mgdL, unitRaw: unitRaw) }
@@ -68,6 +126,8 @@ struct GlucoseActivityAttributes: ActivityAttributes {
         var arrow: String
         var timestamp: Date
         var unitRaw: String
+        /// Simulated by the demo.
+        var isDemo: Bool? = nil
 
         var formattedValue: String { GlucoseShared.format(mgdL: mgdL, unitRaw: unitRaw) }
     }

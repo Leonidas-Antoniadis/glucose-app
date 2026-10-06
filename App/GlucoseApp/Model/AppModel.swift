@@ -79,39 +79,61 @@ final class AppModel {
             guard let self, let event = self.lastAlarmEvent else { return }
             self.notifications.deliver(event, unit: self.unit, alarmPlaying: false)
         }
+        syncDecisionLog()
     }
 
     // MARK: Derived state
 
     var unit: GlucoseUnit { settings.unit }
     var latest: GlucoseReading? { readings.last }
-    var decisionLog: [String] { engine.log.reversed() }
+    /// The alert engine's decisions, newest first. Kept as observed state (the engine itself isn't
+    /// observed), so an open log screen shows new decisions.
+    private(set) var decisionLog: [String] = []
+
+    private func syncDecisionLog() {
+        guard engine.log.count != decisionLog.count || engine.log.last != decisionLog.first else { return }
+        decisionLog = engine.log.reversed()
+    }
     var isDemo: Bool { settings.dataSource == .demo }
 
-    var trendArrow: TrendArrow {
-        guard let latest, Date().timeIntervalSince(latest.timestamp) < 15 * 60 || isDemo else { return .unknown }
+    var trendArrow: TrendArrow { trendArrow(at: Date()) }
+
+    /// The arrow as of `now`. Views pass the time from a TimelineView, so the arrow turns into "?"
+    /// when readings stop even if nothing else changes.
+    func trendArrow(at now: Date) -> TrendArrow {
+        guard let latest, now.timeIntervalSince(latest.timestamp) < 15 * 60 || isDemo else { return .unknown }
         return Trend.arrow(forRate: Trend.ratePerMinute(readings(lastHours: 0.5)))
     }
 
     /// True when the newest value is too old to show as current.
-    var isStale: Bool {
+    var isStale: Bool { isStale(at: Date()) }
+
+    func isStale(at now: Date) -> Bool {
         guard let latest else { return true }
-        return !isDemo && Date().timeIntervalSince(latest.timestamp) > 10 * 60
+        return !isDemo && now.timeIntervalSince(latest.timestamp) > 10 * 60
     }
 
     /// Missing readings in the last 24 hours, e.g. after the phone was out of range.
     /// "No data right now" isn't included; the stale-value banner covers that.
-    var readingGap: DateInterval? {
+    var readingGap: DateInterval? { readingGap(at: Date()) }
+
+    func readingGap(at now: Date) -> DateInterval? {
         guard !isDemo, sensor.record != nil else { return nil }
-        let now = Date()
         guard let gap = ReadingPipeline.recentGap(in: readings, now: now, minimumMinutes: 20, lookbackHours: 24),
               gap.end < now.addingTimeInterval(-60) else { return nil }
         return gap
     }
 
+    /// Whether a gap started before the current sensor gave readings (the change between sensors,
+    /// or its warm-up): no scan can fill it.
+    func isGapBetweenSensors(_ gap: DateInterval) -> Bool {
+        guard let record = sensor.record else { return false }
+        return gap.start < record.warmUpEndsAt.addingTimeInterval(-60)
+    }
+
     /// The sensor keeps 8 hours of history, so a gap that started within that window can be filled by NFC.
     func canFillWithNFC(_ gap: DateInterval) -> Bool {
-        gap.start > Date().addingTimeInterval(-8 * 3600 + 15 * 60)
+        !isGapBetweenSensors(gap) && gap.start > Date().addingTimeInterval(-8 * 3600 + 15 * 60)
     }
 
     func readings(lastHours hours: Double) -> [GlucoseReading] {
@@ -162,9 +184,12 @@ final class AppModel {
             stores.alertState.delete()
             recentEvents = []
             alarm.stop()
+            // The widgets and the Live Activity mustn't keep showing the other source's value.
+            surfaces.reset()
         } else {
             engine.ruleSet = settings.ruleSet
         }
+        syncDecisionLog()
         switch settings.dataSource {
         case .demo:
             sensor.stop()
@@ -181,8 +206,10 @@ final class AppModel {
                 notifications.scheduleSensorReminders(SensorLifecycle.reminders(expiresAt: record.expiresAt, now: now))
             }
             if resetEngine {
-                // Coming from the demo: its "no data" alerts are replaced by the sensor's.
+                // Coming from the demo: its "no data" alerts are replaced by the sensor's, and the
+                // widgets show the newest real reading (marked old if it is).
                 rescheduleMissingDataForSensor()
+                if let latest, Date().timeIntervalSince(latest.timestamp) < 3600 { updateSurfaces() }
             }
             checkBattery()
         }
@@ -273,10 +300,15 @@ final class AppModel {
                 readings.removeFirst(first)
             }
         }
-        if !isDemo, !fresh.isEmpty {
+        // Every real reading is archived, whatever the current source: pairing while still in demo
+        // mode imports 8 hours of history before the source switches to the sensor.
+        let toArchive = fresh.filter { $0.source != .simulated }
+        var archiveFailed = false
+        if !toArchive.isEmpty {
             do {
-                try stores.archive?.append(fresh)
+                try stores.archive?.append(toArchive)
             } catch {
+                archiveFailed = true
                 lastError = "Couldn't save readings: \(error.localizedDescription)"
             }
             if Date().timeIntervalSince(lastPrune) > 86_400 {
@@ -290,6 +322,8 @@ final class AppModel {
         guard live, let latest = readings.last, valid.contains(where: { $0.id == latest.id }) else { return }
         let isNewer = previousLatest.map { latest.timestamp > $0 } ?? true
         guard isNewer else { return }
+        // Readings are flowing again: an earlier sensor or scan error no longer applies.
+        if !archiveFailed, latest.source != .simulated { lastError = nil }
 
         // Don't alert on old values that arrive late (backfill after a long gap).
         if latest.source == .simulated || Date().timeIntervalSince(latest.timestamp) < 10 * 60 {
@@ -304,8 +338,14 @@ final class AppModel {
             rescheduleMissingData(lastReading: latest.timestamp)
             notifications.clearDeliveredMissingData()
         }
+        updateSurfaces()
+    }
+
+    /// Pushes the newest reading to the widgets and the Live Activity.
+    private func updateSurfaces() {
+        guard let latest else { return }
         surfaces.update(latest: latest, arrow: trendArrow, recent: readings(lastHours: 3), unit: unit,
-                        liveActivityEnabled: settings.liveActivity)
+                        liveActivityEnabled: settings.liveActivity, isDemo: isDemo, isForeground: isActive)
     }
 
     /// Replaces the scheduled "No glucose data" notifications, counting from `lastReading`.
@@ -389,6 +429,7 @@ final class AppModel {
         demoMinute = current
         ingest(missed, live: false)
         deliver(missed.flatMap { engine.process($0) }, notify: false)
+        syncDecisionLog()
     }
 
     /// A Critical alert plays from the app while iOS won't let its notification through Silent and Focus.
@@ -465,6 +506,7 @@ final class AppModel {
     /// Saves the alert engine's memory: right away when something changed, otherwise at most
     /// every 5 minutes (so the gap check after a relaunch knows when the last reading was).
     private func saveAlertState(force: Bool) {
+        syncDecisionLog()
         guard !isDemo, !ScreenshotMode.isActive else { return }
         guard force || Date().timeIntervalSince(alertStateSavedAt) > 5 * 60 else { return }
         alertStateSavedAt = Date()
@@ -558,8 +600,18 @@ final class AppModel {
             try change(&copy)
             settings.ruleSet = copy
             lastError = nil
+        } catch let error as AlertRuleSet.RuleSetError {
+            switch error {
+            case .tooManyRules(let direction):
+                lastError = "You can have up to \(AlertRuleSet.maxRulesPerDirection) \(direction == .low ? "low" : "high") alerts."
+            case .thresholdOutOfRange:
+                let range = AlertRuleSet.thresholdRangeMgdL
+                lastError = "Alert thresholds must be between \(unit.format(mgdL: range.lowerBound)) and \(unit.format(mgdL: range.upperBound, includeSymbol: true))."
+            case .ruleNotFound:
+                lastError = "That alert no longer exists."
+            }
         } catch {
-            lastError = "\(error)"
+            lastError = error.localizedDescription
         }
     }
 
@@ -653,10 +705,7 @@ final class AppModel {
         } catch {
             lastError = "Couldn't update saved readings: \(error.localizedDescription)"
         }
-        if let latest {
-            surfaces.update(latest: latest, arrow: trendArrow, recent: readings(lastHours: 3), unit: unit,
-                            liveActivityEnabled: settings.liveActivity)
-        }
+        updateSurfaces()
     }
 
     /// Deletes fingersticks. A calibration fingerstick also leaves the sensor's calibration.
@@ -673,8 +722,10 @@ final class AppModel {
         if calibrationChanged { recalibrateRecent() }
     }
 
+    /// Empty in the demo: comparing real fingersticks with a made-up curve would show a
+    /// meaningless MARD.
     var accuracy: AccuracyReport {
-        AccuracyReport(fingersticks: fingersticks, readings: readings)
+        isDemo ? AccuracyReport(fingersticks: [], readings: []) : AccuracyReport(fingersticks: fingersticks, readings: readings)
     }
 
     /// Deletes readings, notes, fingersticks and raw captures older than `archiveDays`.
@@ -705,7 +756,7 @@ final class AppModel {
         }
         settings.liveActivity = true
         guard let latest = readings.last else { return "There is no glucose reading to show yet." }
-        surfaces.restartLiveActivity(latest: latest, arrow: trendArrow, unit: unit)
+        surfaces.restartLiveActivity(latest: latest, arrow: trendArrow, unit: unit, isDemo: isDemo)
         return nil
     }
 
@@ -733,6 +784,11 @@ final class AppModel {
                 if !isDemo { sensor.start() }
             } else if !isDemo {
                 sensor.appDidBecomeActive()
+            }
+            if wasInactive, started, let latest, !GlucoseShared.isStale(timestamp: latest.timestamp, at: Date()) || isDemo {
+                // A fresh Live Activity before iOS's 8-hour limit ends this one overnight.
+                surfaces.renewLiveActivityIfNeeded(latest: latest, arrow: trendArrow, unit: unit, isDemo: isDemo,
+                                                   enabled: settings.liveActivity)
             }
         case .background:
             isActive = false

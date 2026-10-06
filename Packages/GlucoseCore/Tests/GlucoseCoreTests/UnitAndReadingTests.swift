@@ -38,6 +38,26 @@ final class UnitAndReadingTests: XCTestCase {
         XCTAssertEqual(merged.map(\.mgdL), [110])
     }
 
+    func testChartSegmentsBreakAtGaps() {
+        let readings = [0, 5, 10, 220, 225].map { TestSupport.reading(100, minute: $0) }
+        XCTAssertEqual(ReadingPipeline.segmentIndices(readings), [0, 0, 0, 1, 1], "a 3.5-hour gap starts a new line")
+        XCTAssertEqual(ReadingPipeline.segmentIndices(readings.prefix(3).map { $0 }), [0, 0, 0])
+    }
+
+    func testSparklineEndsAtTheNewestReading() {
+        // A dropout shifted the 5-minute steps: the newest reading is 3 minutes after the last kept one.
+        let minutes = [0, 5, 10, 17, 22, 25]
+        let readings = minutes.map { TestSupport.reading(100 + Double($0), minute: $0) }
+        let thinned = ReadingPipeline.sparkline(readings)
+        XCTAssertEqual(thinned.last?.minuteIndex, 25)
+        XCTAssertEqual(thinned.map(\.minuteIndex), [0, 5, 10, 17, 25])
+    }
+
+    func testRateFormatting() {
+        XCTAssertEqual(GlucoseUnit.mgdL.formatRate(mgdLPerMinute: 1.5), "1.5 mg/dL/min")
+        XCTAssertEqual(GlucoseUnit.mmolL.formatRate(mgdLPerMinute: 2.5), "0.14 mmol/L/min")
+    }
+
     func testVeryLowAndHighValuesBecomeLOAndHI() {
         XCTAssertEqual(ReadingPipeline.clamped(15), 39, "a deep low is kept as LO, not dropped")
         XCTAssertEqual(ReadingPipeline.clamped(-20), 39)

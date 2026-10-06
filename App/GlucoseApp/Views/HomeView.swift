@@ -11,8 +11,14 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    StatusBanners()
-                    CurrentValueCard()
+                    // Re-checked every 30 seconds: when readings stop, nothing else changes, and the
+                    // value must still turn grey and the "No reading since" banner appear.
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        VStack(alignment: .leading, spacing: 16) {
+                            StatusBanners(now: context.date)
+                            CurrentValueCard(now: context.date)
+                        }
+                    }
                     HomeQuickLog(logged: $logged)
                     Picker("Chart window", selection: $hours) {
                         ForEach([3.0, 6, 12, 24], id: \.self) { Text("\(Int($0)) h").tag($0) }
@@ -63,6 +69,7 @@ struct StatusBanners: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
     @Environment(\.openURL) private var openURL
+    var now = Date()
 
     var body: some View {
         VStack(spacing: 8) {
@@ -80,7 +87,12 @@ struct StatusBanners: View {
                        color: .red)
             }
             if !model.isDemo {
-                if model.isStale, let latest = model.latest, sensor.record != nil {
+                if let record = sensor.record, now < record.warmUpEndsAt {
+                    // A new sensor gives no readings for its first hour: nothing to scan or pair again.
+                    Banner(systemImage: "hourglass",
+                           text: "New sensor warming up. Readings start at \(record.warmUpEndsAt.formatted(date: .omitted, time: .shortened)).",
+                           color: .blue)
+                } else if model.isStale(at: now), let latest = model.latest, sensor.record != nil {
                     ActionBanner(
                         systemImage: "antenna.radiowaves.left.and.right.slash",
                         text: noDataText(since: latest.timestamp),
@@ -90,13 +102,16 @@ struct StatusBanners: View {
                             ("Pair again", { _ = Task { await sensor.pair() } }),
                         ]
                     )
-                } else if let gap = model.readingGap {
+                } else if let gap = model.readingGap(at: now) {
                     let span = "\(gap.start.formatted(date: .omitted, time: .shortened))–\(gap.end.formatted(date: .omitted, time: .shortened))"
                     if model.canFillWithNFC(gap) {
                         ActionBanner(systemImage: "chart.line.downtrend.xyaxis",
                                      text: "Missing readings \(span). Scan the sensor to fill the gap from its 8-hour memory.",
                                      color: .orange,
                                      actions: [("Scan sensor", { _ = Task { await sensor.scanHistory() } })])
+                    } else if model.isGapBetweenSensors(gap) {
+                        Banner(systemImage: "chart.line.downtrend.xyaxis",
+                               text: "No readings \(span), between sensors and during warm-up.")
                     } else {
                         Banner(systemImage: "chart.line.downtrend.xyaxis",
                                text: "Missing readings \(span). The sensor only keeps 8 hours, so this gap can't be filled.")
@@ -113,7 +128,8 @@ struct StatusBanners: View {
                 }
             }
             if let error = model.lastError {
-                Banner(systemImage: "xmark.octagon", text: error, color: .red)
+                ActionBanner(systemImage: "xmark.octagon", text: error, color: .red,
+                             actions: [("Dismiss", { model.lastError = nil })])
             }
         }
     }
@@ -161,30 +177,40 @@ struct ActionBanner: View {
 struct CurrentValueCard: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
+    var now = Date()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let latest = model.latest {
+                let stale = model.isStale(at: now)
+                let arrow = model.trendArrow(at: now)
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(model.unit.formatReading(mgdL: latest.mgdL))
                         .font(.system(size: 72, weight: .bold, design: .rounded))
-                        .foregroundStyle(model.isStale ? Color.secondary : RangeColor.color(for: latest.mgdL))
-                        .strikethrough(model.isStale)
+                        .foregroundStyle(stale ? Color.secondary : RangeColor.color(for: latest.mgdL))
+                        .strikethrough(stale)
                         .contentTransition(.numericText())
-                    Text(model.trendArrow.symbol)
+                    Text(arrow.symbol)
                         .font(.system(size: 48, weight: .semibold))
-                        .accessibilityLabel("Trend \(String(describing: model.trendArrow))")
+                        .accessibilityLabel(arrow.spokenName)
                     Text(model.unit.symbol)
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }
-                Text(latest.timestamp, style: .relative)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                + Text(" ago")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                SensorSummaryRow()
+                if model.isDemo, model.settings.demoSpeed == .fast {
+                    // 60x demo readings are dated ahead of the clock, so an age would be nonsense.
+                    Text("Simulated, 60x speed")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(latest.timestamp, style: .relative)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    + Text(" ago")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                SensorSummaryRow(now: now)
             } else {
                 ContentUnavailableView("No readings yet", systemImage: "drop",
                                        description: Text(model.isDemo ? "The demo starts in a moment." : "Waiting for the sensor."))
@@ -199,6 +225,7 @@ struct CurrentValueCard: View {
 struct SensorSummaryRow: View {
     @Environment(AppModel.self) private var model
     @Environment(SensorConnection.self) private var sensor
+    var now = Date()
 
     var body: some View {
         HStack {
@@ -207,7 +234,11 @@ struct SensorSummaryRow: View {
             } else if let record = sensor.record {
                 Label(sensor.status.title, systemImage: "sensor.tag.radiowaves.forward")
                 Spacer()
-                Text("ends ") + Text(record.expiresAt, style: .relative)
+                if record.expiresAt > now {
+                    Text("ends in ") + Text(record.expiresAt, style: .relative)
+                } else {
+                    Text("ended ") + Text(record.expiresAt, style: .relative) + Text(" ago")
+                }
             } else {
                 Label("No sensor", systemImage: "sensor.tag.radiowaves.forward")
             }

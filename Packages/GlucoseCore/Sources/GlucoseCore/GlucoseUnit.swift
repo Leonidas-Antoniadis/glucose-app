@@ -48,6 +48,15 @@ public enum GlucoseUnit: String, Codable, CaseIterable, Sendable {
         return format(mgdL: value, includeSymbol: includeSymbol)
     }
 
+    /// Formats a rate of change given in mg/dL per minute: one decimal in mg/dL/min, two in
+    /// mmol/L/min (1.5 mg/dL/min is 0.08 mmol/L/min, which one decimal would round to 0.1).
+    public func formatRate(mgdLPerMinute rate: Double) -> String {
+        switch self {
+        case .mgdL: return String(format: "%.1f mg/dL/min", rate)
+        case .mmolL: return String(format: "%.2f mmol/L/min", fromMgdL(rate))
+        }
+    }
+
     /// Step size for threshold editors in this unit, expressed in mg/dL.
     public var editorStepMgdL: Double {
         switch self {

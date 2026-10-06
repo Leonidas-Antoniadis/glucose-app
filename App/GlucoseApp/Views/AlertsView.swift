@@ -89,7 +89,7 @@ struct AlertsView: View {
                 }
 
                 Section("Presets") {
-                    Button("Basic (80 / 70 / 60, 180 / 220 / 250)") { model.updateRules { $0 = $0.applyingPreset(.basic()) } }
+                    Button("Basic (\(basicThresholds))") { model.updateRules { $0 = $0.applyingPreset(.basic()) } }
                     Button("Night") { model.updateRules { $0 = $0.applyingPreset(.night()) } }
                     Button("Sensitive") { model.updateRules { $0 = $0.applyingPreset(.sensitive()) } }
                 }
@@ -122,10 +122,18 @@ struct AlertsView: View {
         case .predictiveLow(let threshold, let minutes):
             return "Below \(model.unit.format(mgdL: threshold, includeSymbol: true)) within \(minutes) min"
         case .fallingFast(let rate):
-            return "Falling faster than \(model.unit.format(mgdL: rate)) \(model.unit.symbol)/min"
+            return "Falling faster than \(model.unit.formatRate(mgdLPerMinute: rate))"
         case .risingFast(let rate):
-            return "Rising faster than \(model.unit.format(mgdL: rate)) \(model.unit.symbol)/min"
+            return "Rising faster than \(model.unit.formatRate(mgdLPerMinute: rate))"
         }
+    }
+
+    /// The Basic preset's thresholds in the display unit, lows then highs.
+    private var basicThresholds: String {
+        let rules = AlertRuleSet.basic().rules
+        let lows = rules.filter { $0.direction == .low }.map { model.unit.format(mgdL: $0.thresholdMgdL) }
+        let highs = rules.filter { $0.direction == .high }.map { model.unit.format(mgdL: $0.thresholdMgdL) }
+        return lows.joined(separator: " / ") + ", " + highs.joined(separator: " / ")
     }
 
     private func describe(_ issue: AlertRuleSet.Issue) -> String {
@@ -196,6 +204,8 @@ struct SoundPicker: View {
             Picker("Tune", selection: Binding(get: { name }, set: { sound = .tune(name: $0) })) {
                 ForEach(SoundCatalog.tunes + SoundCatalog.customTunes()) { Text($0.title).tag($0.id) }
             }
+            // A separate list: the long titles don't fit beside the label in a menu picker.
+            .pickerStyle(.navigationLink)
             if SoundCatalog.isMissing(sound) {
                 Text("This imported tune isn't on this phone (for example after restoring a backup), so the built-in alarm plays instead. Import it again or pick another tune.")
                     .font(.caption)
@@ -206,6 +216,7 @@ struct SoundPicker: View {
             Picker("Voice", selection: Binding(get: { clip }, set: { sound = .voice(clip: $0) })) {
                 ForEach(SoundCatalog.voiceClips) { Text($0.title).tag($0.id) }
             }
+            .pickerStyle(.navigationLink)
         }
         if sound != .silent {
             if SoundPreviewPlayer.shared.playing == sound {
@@ -408,11 +419,11 @@ struct TrendAlertEditorView: View {
                     }
                 case .fallingFast(let rate):
                     Stepper(value: Binding(get: { rate }, set: { alert.kind = .fallingFast(mgdLPerMinute: $0) }), in: 1...5, step: 0.5) {
-                        Text("Faster than \(String(format: "%.1f", rate)) mg/dL per min")
+                        Text("Faster than \(unit.formatRate(mgdLPerMinute: rate))")
                     }
                 case .risingFast(let rate):
                     Stepper(value: Binding(get: { rate }, set: { alert.kind = .risingFast(mgdLPerMinute: $0) }), in: 1...5, step: 0.5) {
-                        Text("Faster than \(String(format: "%.1f", rate)) mg/dL per min")
+                        Text("Faster than \(unit.formatRate(mgdLPerMinute: rate))")
                     }
                 }
             }

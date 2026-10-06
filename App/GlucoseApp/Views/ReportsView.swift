@@ -27,13 +27,19 @@ struct ReportsView: View {
                 }
 
                 if let stats, let period {
+                    let u = model.unit
                     Section("Time in ranges") {
                         TimeInRangeBar(ranges: stats.ranges).frame(height: 28)
-                        RangeRow(label: "Very high (>250)", value: stats.ranges.veryHigh, target: "< 5%", color: .orange)
-                        RangeRow(label: "High (181-250)", value: stats.ranges.high, target: nil, color: .yellow)
-                        RangeRow(label: "In range (70-180)", value: stats.ranges.inRange, target: "> 70%", color: .green)
-                        RangeRow(label: "Low (54-69)", value: stats.ranges.low, target: nil, color: .orange)
-                        RangeRow(label: "Very low (<54)", value: stats.ranges.veryLow, target: "< 1%", color: .red)
+                        RangeRow(label: "Very high (>\(u.format(mgdL: 250)))", value: stats.ranges.veryHigh, target: "< 5%",
+                                 color: RangePalette.color(zone: 4))
+                        RangeRow(label: "High (\(u.format(mgdL: 181))-\(u.format(mgdL: 250)))", value: stats.ranges.high, target: nil,
+                                 color: RangePalette.color(zone: 3))
+                        RangeRow(label: "In range (\(u.format(mgdL: 70))-\(u.format(mgdL: 180)))", value: stats.ranges.inRange, target: "> 70%",
+                                 color: RangePalette.color(zone: 2))
+                        RangeRow(label: "Low (\(u.format(mgdL: 54))-\(u.format(mgdL: 69)))", value: stats.ranges.low, target: nil,
+                                 color: RangePalette.color(zone: 1))
+                        RangeRow(label: "Very low (<\(u.format(mgdL: 54)))", value: stats.ranges.veryLow, target: "< 1%",
+                                 color: RangePalette.color(zone: 0))
                     }
                     Section("Glucose") {
                         MetricRow(label: "Mean", value: model.unit.format(mgdL: stats.meanMgdL, includeSymbol: true))
@@ -52,7 +58,7 @@ struct ReportsView: View {
                         }
                         if let night = split.night {
                             MetricRow(label: "Night (22-06): in range", value: String(format: "%.0f %%", night.ranges.inRange * 100))
-                            MetricRow(label: "Night: below 70", value: String(format: "%.1f %%", night.ranges.belowRange * 100),
+                            MetricRow(label: "Night: below \(model.unit.format(mgdL: 70))", value: String(format: "%.1f %%", night.ranges.belowRange * 100),
                                       warning: night.ranges.belowRange > 0.04)
                         }
                     }
@@ -72,7 +78,8 @@ struct ReportsView: View {
                     }
                     Section {
                         Button("Create PDF report", systemImage: "doc.richtext") {
-                            pdfURL = ReportExporter.pdf(stats: stats, readings: readings, period: period, unit: model.unit)
+                            pdfURL = ReportExporter.pdf(stats: stats, readings: readings, period: period, unit: model.unit,
+                                                        calibrated: model.sensor.record?.calibration.isCalibrated == true)
                         }
                         if let pdfURL {
                             ShareLink(item: pdfURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
@@ -100,8 +107,10 @@ struct ReportsView: View {
         }
     }
 
+    /// Ends at the newest reading, or now if there's none in memory (more than 14 days without a
+    /// sensor), so the 30 and 90-day reports still come from the archive.
     private var currentPeriod: DateInterval? {
-        guard let end = model.latest?.timestamp else { return nil }
+        let end = model.latest?.timestamp ?? Date()
         return DateInterval(start: end.addingTimeInterval(-days * 86_400), end: end)
     }
 }
@@ -112,11 +121,11 @@ struct TimeInRangeBar: View {
     var body: some View {
         GeometryReader { proxy in
             HStack(spacing: 1) {
-                segment(ranges.veryLow, .red, proxy.size.width)
-                segment(ranges.low, .orange, proxy.size.width)
-                segment(ranges.inRange, .green, proxy.size.width)
-                segment(ranges.high, .yellow, proxy.size.width)
-                segment(ranges.veryHigh, .orange.opacity(0.7), proxy.size.width)
+                segment(ranges.veryLow, RangePalette.color(zone: 0), proxy.size.width)
+                segment(ranges.low, RangePalette.color(zone: 1), proxy.size.width)
+                segment(ranges.inRange, RangePalette.color(zone: 2), proxy.size.width)
+                segment(ranges.high, RangePalette.color(zone: 3), proxy.size.width)
+                segment(ranges.veryHigh, RangePalette.color(zone: 4), proxy.size.width)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6))

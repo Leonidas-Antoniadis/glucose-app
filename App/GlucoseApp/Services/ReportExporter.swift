@@ -7,9 +7,11 @@ import GlucoseCore
 enum ReportExporter {
     static let pageSize = CGSize(width: 595, height: 842) // A4 in points
 
-    static func pdf(stats: GlucoseStatistics, readings: [GlucoseReading], period: DateInterval, unit: GlucoseUnit) -> URL? {
+    static func pdf(stats: GlucoseStatistics, readings: [GlucoseReading], period: DateInterval, unit: GlucoseUnit,
+                    calibrated: Bool) -> URL? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("Glucose report \(fileDate(period.end)).pdf")
-        let document = ReportDocument(stats: stats, profile: AmbulatoryGlucoseProfile(readings: readings), period: period, unit: unit)
+        let document = ReportDocument(stats: stats, profile: AmbulatoryGlucoseProfile(readings: readings), period: period, unit: unit,
+                                      calibrated: calibrated)
             .frame(width: pageSize.width, height: pageSize.height)
         let renderer = ImageRenderer(content: document)
         var written = false
@@ -52,21 +54,27 @@ struct ReportDocument: View {
     let profile: AmbulatoryGlucoseProfile
     let period: DateInterval
     let unit: GlucoseUnit
+    let calibrated: Bool
 
     var body: some View {
+        let u = unit
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Glucose report").font(.title.bold())
                 Text("\(period.start.formatted(date: .long, time: .omitted)) – \(period.end.formatted(date: .long, time: .omitted))")
                     .foregroundStyle(.secondary)
-                Text("Personal CGM app, not a medical device. Values are calibrated against fingersticks.")
+                Text("Personal CGM app, not a medical device. "
+                     + (calibrated ? "Values are calibrated against fingersticks." : "Values are uncalibrated sensor estimates."))
                     .font(.caption).foregroundStyle(.secondary)
             }
 
             Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 6) {
-                row("Time in range (70-180)", String(format: "%.0f %%", stats.ranges.inRange * 100), "> 70%")
-                row("Below 70 / below 54", String(format: "%.1f %% / %.1f %%", stats.ranges.belowRange * 100, stats.ranges.veryLow * 100), "< 4% / < 1%")
-                row("Above 180 / above 250", String(format: "%.0f %% / %.0f %%", stats.ranges.aboveRange * 100, stats.ranges.veryHigh * 100), "< 25% / < 5%")
+                row("Time in range (\(u.format(mgdL: 70))-\(u.format(mgdL: 180)) \(u.symbol))",
+                    String(format: "%.0f %%", stats.ranges.inRange * 100), "> 70%")
+                row("Below \(u.format(mgdL: 70)) / below \(u.format(mgdL: 54))",
+                    String(format: "%.1f %% / %.1f %%", stats.ranges.belowRange * 100, stats.ranges.veryLow * 100), "< 4% / < 1%")
+                row("Above \(u.format(mgdL: 180)) / above \(u.format(mgdL: 250))",
+                    String(format: "%.0f %% / %.0f %%", stats.ranges.aboveRange * 100, stats.ranges.veryHigh * 100), "< 25% / < 5%")
                 row("Mean glucose", unit.format(mgdL: stats.meanMgdL, includeSymbol: true), "")
                 row("GMI", String(format: "%.1f %%", stats.gmiPercent), "")
                 row("CV", String(format: "%.1f %%", stats.coefficientOfVariation), "≤ 36%")

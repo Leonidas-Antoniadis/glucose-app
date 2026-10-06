@@ -13,6 +13,18 @@ public enum TrendArrow: String, Codable, Sendable {
         case .unknown: return "?"
         }
     }
+
+    /// What VoiceOver reads for the arrow.
+    public var spokenName: String {
+        switch self {
+        case .fallingQuickly: return "Falling quickly"
+        case .falling: return "Falling"
+        case .stable: return "Steady"
+        case .rising: return "Rising"
+        case .risingQuickly: return "Rising quickly"
+        case .unknown: return "Trend unknown"
+        }
+    }
 }
 
 public enum Trend {
