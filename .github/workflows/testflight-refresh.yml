@@ -1,0 +1,54 @@
+name: TestFlight refresh
+
+# Each TestFlight build stops working 90 days after upload. When the app doesn't change for a
+# while, nothing new goes up, so every Monday this starts the TestFlight upload if the last
+# successful one is 30 or more days old. The same code goes up with a new build number (the
+# upload numbers builds by date) and 90 new days; with Automatic Updates on in TestFlight, the
+# phone installs it by itself. A failed upload is retried the next Monday.
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+env:
+  MAX_AGE_DAYS: 30
+
+jobs:
+  refresh:
+    if: github.repository == 'Leonidas-Antoniadis/glucose-app'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start an upload if the last one is old
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          running="$(gh run list --workflow testflight.yml --limit 20 --json status --jq 'map(select(.status != "completed")) | length')"
+          if [ "$running" -gt 0 ]; then
+            echo "An upload is already running." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          last="$(gh run list --workflow testflight.yml --branch main --status success --limit 1 --json createdAt --jq '.[0].createdAt // ""')"
+          if [ -n "$last" ]; then
+            age=$(( ($(date +%s) - $(date -d "$last" +%s)) / 86400 ))
+            if [ "$age" -lt "$MAX_AGE_DAYS" ]; then
+              echo "Last upload $age days ago ($last): nothing to do." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Last upload $age days ago ($last): starting a new one." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No successful upload found: starting one." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          gh workflow run testflight.yml --ref main
+
+      # GitHub turns off schedules in a public repository after 60 days without commits, which
+      # is exactly when this is needed. Enabling the workflow again resets that timer.
+      - name: Keep the schedule on
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh api -X PUT "repos/$GH_REPO/actions/workflows/testflight-refresh.yml/enable"

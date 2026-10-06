@@ -42,7 +42,7 @@ You'll get two emails from Apple:
 ### 5. Updates and expiry
 
 - New versions show up in TestFlight. Turn on **Automatic Updates** on the app's TestFlight page.
-- Each build stops working **90 days** after it was uploaded. TestFlight shows the days left. Ask for a new build before it runs out.
+- Each build stops working **90 days** after it was uploaded. TestFlight shows the days left. If the app hasn't changed for 30 days, a fresh copy of the same version is uploaded automatically, so with Automatic Updates on it never runs out.
 - Updating keeps your data. Deleting the app erases its readings, settings and logbook, because everything stays on the phone.
 
 ### Troubleshooting
@@ -92,3 +92,5 @@ The **TestFlight upload** workflow uploads a new build on every push to `main` t
 Distribution signing uses Apple's cloud-managed certificate through the API key. The stored development certificate stops Xcode from creating a new one on every run (Apple limits how many a team can have). It expires after a year: create a new one and replace both `BUILD_CERT_` secrets.
 
 Export compliance is already answered in the app (`ITSAppUsesNonExemptEncryption = NO`), so builds don't wait on that question.
+
+Builds expire 90 days after upload. When the app doesn't change for a while, the **TestFlight refresh** workflow keeps them fresh: every Monday it starts the TestFlight upload if the last successful one is 30 or more days old. The same code goes up with a new build number, and testers' phones install it like any other update. It uses no extra secrets.
