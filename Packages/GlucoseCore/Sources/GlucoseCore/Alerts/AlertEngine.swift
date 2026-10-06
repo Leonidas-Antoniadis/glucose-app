@@ -197,10 +197,9 @@ public struct AlertEngine: Sendable {
                 return confirmed && scheduled
             }
             if direction == .low {
-                audibleLowActive = active.contains { rule in
-                    let snoozed = states[rule.id]?.snoozedUntil.map { now < $0 } ?? false
-                    return (rule.sound != .silent || rule.isCritical) && !snoozed
-                }
+                // A snoozed one counts too: after Snooze or Treating on a low, "Falling fast"
+                // sounding right away would be the same alarm again.
+                audibleLowActive = active.contains { rule in rule.sound != .silent || rule.isCritical }
             }
             guard let top = active.first else { continue }
 
@@ -283,8 +282,8 @@ public struct AlertEngine: Sendable {
                 record(now, "re-armed \(alert.name)")
             }
             let triggered = alert.isTriggered(value: value, rate: rate, projected: projected)
-            // A low rule that is already sounding makes "low soon" and "falling fast" redundant.
-            // A silent, snoozed or not-yet-confirmed one doesn't.
+            // A low rule that is already sounding (or snoozed) makes "low soon" and "falling fast"
+            // redundant. A silent or not-yet-confirmed one doesn't.
             let suppressed = alert.kind.direction == .low && audibleLowActive
             let snoozed = state.snoozedUntil.map { now < $0 } ?? false
 

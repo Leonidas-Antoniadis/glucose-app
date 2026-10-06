@@ -89,6 +89,13 @@ final class AppModel {
             guard let self, let event = self.lastAlarmEvent else { return }
             self.notifications.deliver(event, unit: self.unit, alarmPlaying: false)
         }
+        // iOS relaunches the app in the background for Bluetooth events. The Bluetooth manager has
+        // to exist from launch, with its restore identifier, not only once the first screen runs
+        // start() (which may not happen in the background). With "Run in background" off the
+        // connection was stopped when the app left, so iOS doesn't relaunch it for Bluetooth.
+        if settings.dataSource == .libre, settings.runInBackground, sensor.record != nil, !ScreenshotMode.isActive {
+            sensor.start()
+        }
         syncDecisionLog()
     }
 
@@ -100,7 +107,30 @@ final class AppModel {
     /// observed), so an open log screen shows new decisions.
     private(set) var decisionLog: [String] = []
 
+    /// An alert that is sounding now, and when its snooze ends if it's snoozed.
+    struct AlertStatus: Equatable {
+        var snoozedUntil: Date?
+    }
+
+    /// The sounding alerts by id, kept as observed state (the engine itself isn't observed), so
+    /// Home shows Snooze, or "Snoozed until …" once tapped, and nothing once the alert is over.
+    private(set) var soundingAlerts: [UUID: AlertStatus] = [:]
+
+    private func syncAlertStatus() {
+        let now = Date()
+        var status: [UUID: AlertStatus] = [:]
+        for rule in settings.ruleSet.rules where engine.isFiring(rule.id) {
+            status[rule.id] = AlertStatus(snoozedUntil: engine.states[rule.id]?.snoozedUntil.flatMap { $0 > now ? $0 : nil })
+        }
+        for alert in settings.ruleSet.trendAlerts where engine.isFiring(alert.id) {
+            status[alert.id] = AlertStatus(snoozedUntil: engine.trendStates[alert.id]?.snoozedUntil.flatMap { $0 > now ? $0 : nil })
+        }
+        if status != soundingAlerts { soundingAlerts = status }
+    }
+
+    /// Also refreshes the observed alert status: both change with every engine decision.
     private func syncDecisionLog() {
+        syncAlertStatus()
         guard engine.log.count != decisionLog.count || engine.log.last != decisionLog.first else { return }
         decisionLog = engine.log.reversed()
         if !ScreenshotMode.isActive { try? stores.decisionLog.save(engine.log) }
@@ -176,22 +206,29 @@ final class AppModel {
         // being open: that would skip stopping the alarm, Face ID and the status refresh later.
         // (During a normal launch the state can still be .inactive, which counts as open.)
         isActive = UIApplication.shared.applicationState != .background
+        // Launched in the background (a notification action) with "Run in background" off: the
+        // sensor waits until the app is opened, as it would after leaving the app.
+        if !isActive, !settings.runInBackground, settings.dataSource == .libre {
+            pausedInBackground = true
+            sensor.stop()
+        }
         // Reports, backups and captures shared earlier aren't needed any more.
         AppStores.clearExports()
+        signatureExpiry = ProvisioningProfile.expirationDate()
+        notifications.scheduleSignatureReminders(expiry: signatureExpiry)
+        startBatteryMonitoring()
+        // The sensor and alerts first: neither waits for Face ID or the notification prompt.
+        activateSource()
+        pruneOldData()
+        if settings.biometricLock {
+            isLocked = true
+            // In the background Face ID can't be shown; opening the app asks for it.
+            if isActive { Task { await unlock() } }
+        }
         if !ScreenshotMode.isActive {
             await notifications.requestAuthorization()
             await refreshNotificationStatus()
         }
-        signatureExpiry = ProvisioningProfile.expirationDate()
-        notifications.scheduleSignatureReminders(expiry: signatureExpiry)
-        startBatteryMonitoring()
-        if settings.biometricLock {
-            isLocked = true
-            // In the background Face ID can't be shown; opening the app asks for it.
-            if isActive { await unlock() }
-        }
-        activateSource()
-        pruneOldData()
         rescheduleBedtimeReminder()
         // After iOS relaunched the app (say, for a Lock Screen button), the Live Activity shows
         // the alert state as it is now instead of waiting for the next reading.
@@ -231,7 +268,8 @@ final class AppModel {
                                                   to: now.addingTimeInterval(3600))) ?? []
             // Trend alerts need the last minutes of history, not just the next live readings.
             engine.addHistory(readings(lastHours: 0.5))
-            sensor.start()
+            // Paused while closed with "Run in background" off: it starts when the app opens.
+            if !pausedInBackground { sensor.start() }
             if let record = sensor.record {
                 notifications.scheduleSensorReminders(SensorLifecycle.reminders(expiresAt: record.expiresAt, now: now))
             }
@@ -1058,6 +1096,10 @@ final class AppModel {
         }.value
         var restored = payload.settings
         restored.onboardingDone = true
+        // The phone keeps its data source: a backup made in the demo mustn't switch a live sensor
+        // to simulated values.
+        restored.dataSource = settings.dataSource
+        restored.demoSpeed = settings.demoSpeed
         settings = restored
 
         let knownNotes = Set(logbook.map(\.id))

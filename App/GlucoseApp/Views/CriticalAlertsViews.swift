@@ -67,10 +67,13 @@ struct CriticalAlertsChecklist: View {
                         : "Turn on Run in background so the app can play the alarm while closed.") {
                     Button("Turn on") { model.settings.runInBackground = true }
                 }
-                let mediaVolume = AVAudioSession.sharedInstance().outputVolume
-                if mediaVolume < 0.5 {
-                    row(ok: false, title: "Media volume \(Int((mediaVolume * 100).rounded()))%",
-                        detail: "The app's alarm plays at media volume. Turn it up with the volume buttons while no call is active. The notification still sounds at ringer volume.")
+                // Re-read every few seconds, with the same threshold as the bedtime check.
+                TimelineView(.periodic(from: .now, by: 5)) { _ in
+                    let mediaVolume = AppModel.freshMediaVolume()
+                    if mediaVolume < BedtimeCheck.comfortableVolume {
+                        row(ok: false, title: "Media volume \(Int((mediaVolume * 100).rounded()))%",
+                            detail: "The app's alarm plays at media volume. Turn it up with the volume buttons while no call is active. The notification still sounds at ringer volume.")
+                    }
                 }
                 row(ok: model.timeSensitiveAllowed, title: "Focus",
                     detail: model.timeSensitiveAllowed

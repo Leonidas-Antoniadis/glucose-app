@@ -270,13 +270,23 @@ struct RecentAlertsList: View {
                         .foregroundStyle(event.direction == .low ? .red : .orange)
                     VStack(alignment: .leading) {
                         Text("\(event.ruleName): \(model.unit.formatReading(mgdL: event.valueMgdL, includeSymbol: true))")
-                        Text(event.date, style: .time).font(.caption).foregroundStyle(.secondary)
+                        // An alert from another day says which day, so it isn't read as tonight's.
+                        Text(Calendar.current.isDateInToday(event.date)
+                             ? event.date.formatted(date: .omitted, time: .shortened)
+                             : event.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()))
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if isNewestOfRule, model.isAlertSounding(event.ruleID) {
-                        Button("Snooze") { model.acknowledge(ruleID: event.ruleID) }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                    if isNewestOfRule, let status = model.soundingAlerts[event.ruleID] {
+                        if let until = status.snoozedUntil {
+                            Text("Snoozed until \(until.formatted(date: .omitted, time: .shortened))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button("Snooze") { model.acknowledge(ruleID: event.ruleID) }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        }
                     }
                 }
             }

@@ -124,4 +124,16 @@ final class TrendAlertTests: XCTestCase {
     func testUrgentLowRules() {
         XCTAssertEqual(AlertRuleSet.basic().urgentLowRules.map(\.thresholdMgdL), [60])
     }
+
+    func testFallingFastStaysQuietAfterALowIsSnoozed() throws {
+        let low = AlertRule(name: "L70", direction: .low, thresholdMgdL: 70, sound: .tune(name: "alarm_loud_low"),
+                            repeatIntervalMinutes: 10)
+        let falling = TrendAlert(name: "Falling", kind: .fallingFast(mgdLPerMinute: 2), sound: .tune(name: "alarm_loud_low"))
+        var e = try engine(rules: [low], trend: [falling])
+        XCTAssertEqual(run(&e, (0...11).map { 80 - Double($0) }).flatMap { $0 }, ["L70"])
+        XCTAssertTrue(e.acknowledge(ruleID: low.id, at: TestSupport.noon.addingTimeInterval(12 * 60)))
+        // Treated but still dropping fast: the snoozed low keeps "Falling" quiet.
+        let after = (12...26).map { e.process(TestSupport.reading(69 - Double($0 - 11) * 2.5, minute: $0)) }
+        XCTAssertTrue(after.flatMap { $0 }.isEmpty)
+    }
 }

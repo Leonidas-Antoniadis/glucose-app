@@ -54,6 +54,9 @@ public struct BedtimeItem: Identifiable, Hashable, Sendable {
 }
 
 public enum BedtimeCheck {
+    /// Below this media volume the app's own alarm may not wake you.
+    public static let comfortableVolume = 0.6
+
     /// The checks, the ones that need fixing first.
     public static func items(_ input: BedtimeInputs, calendar: Calendar = .autoupdatingCurrent,
                              time: (Date) -> String) -> [BedtimeItem] {
@@ -62,10 +65,10 @@ public enum BedtimeCheck {
         if let volume = input.mediaVolume {
             let percent = Int((volume * 100).rounded())
             items.append(BedtimeItem(
-                id: "volume", status: volume < 0.3 ? .problem : volume < 0.6 ? .warning : .ok,
+                id: "volume", status: volume < 0.3 ? .problem : volume < comfortableVolume ? .warning : .ok,
                 title: "Media volume \(percent)%",
-                detail: volume < 0.6 ? "Alarms the app plays use this volume. Raise it before you sleep." : "Alarms the app plays use this volume.",
-                fix: volume < 0.6 ? .raiseVolume : .none))
+                detail: volume < comfortableVolume ? "Alarms the app plays use this volume. Raise it before you sleep." : "Alarms the app plays use this volume.",
+                fix: volume < comfortableVolume ? .raiseVolume : .none))
         }
 
         if let level = input.batteryLevel {

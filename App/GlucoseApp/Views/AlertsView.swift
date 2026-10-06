@@ -257,9 +257,13 @@ struct RuleEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var rule: AlertRule
     @State private var confirmDisable = false
+    /// As it was when the editor opened: with changes, Back is replaced by Cancel and Save, so
+    /// an edit can't be lost by going back.
+    private let original: AlertRule
 
     init(rule: AlertRule) {
         _rule = State(initialValue: rule)
+        original = rule
     }
 
     private enum ScheduleKind: String, CaseIterable, Identifiable {
@@ -335,7 +339,13 @@ struct RuleEditorView: View {
             }
         }
         .navigationTitle(rule.name)
+        .navigationBarBackButtonHidden(rule != original)
         .toolbar {
+            if rule != original {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") { save() }
             }
@@ -398,9 +408,11 @@ struct TrendAlertEditorView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var alert: TrendAlert
+    private let original: TrendAlert
 
     init(alert: TrendAlert) {
         _alert = State(initialValue: alert)
+        original = alert
     }
 
     var body: some View {
@@ -442,7 +454,13 @@ struct TrendAlertEditorView: View {
             }
         }
         .navigationTitle(alert.name)
+        .navigationBarBackButtonHidden(alert != original)
         .toolbar {
+            if alert != original {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
                     model.updateRules { $0.updateTrendAlert(alert) }
