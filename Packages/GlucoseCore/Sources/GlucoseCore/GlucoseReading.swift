@@ -29,6 +29,12 @@ public struct GlucoseReading: Codable, Hashable, Sendable, Identifiable {
         self.source = source
         self.raw = raw
     }
+
+    /// The same reading with another timestamp.
+    public func retimed(to timestamp: Date) -> GlucoseReading {
+        GlucoseReading(sensorSerial: sensorSerial, minuteIndex: minuteIndex, timestamp: timestamp, mgdL: mgdL,
+                       source: source, raw: raw)
+    }
 }
 
 public enum ReadingPipeline {
@@ -54,6 +60,15 @@ public enum ReadingPipeline {
             }
         }
         return byID.values.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Re-dates one sensor's readings from its minute counter (`activatedAt` + `minuteIndex` minutes),
+    /// for when the sensor's start time had to be moved because the phone clock changed or drifted.
+    /// Without this, new readings would sort before older ones dated by the old clock.
+    public static func retimed(_ readings: [GlucoseReading], sensorSerial: String, activatedAt: Date) -> [GlucoseReading] {
+        readings
+            .map { $0.sensorSerial == sensorSerial ? $0.retimed(to: activatedAt.addingTimeInterval(Double($0.minuteIndex) * 60)) : $0 }
+            .sorted { $0.timestamp < $1.timestamp }
     }
 
     /// Returns the gaps (in minutes of sensor time) inside a single sensor's series.

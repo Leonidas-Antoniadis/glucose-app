@@ -192,6 +192,29 @@ public struct AlertEngine: Sendable {
         record(date, "snoozed \(ruleID) until \(date)")
     }
 
+    /// Moves every stored time by `interval`, for when readings were re-dated after the phone clock
+    /// changed. Keeps confirmation delays, repeat intervals and snoozes running as before instead
+    /// of waiting for the clock to catch up.
+    public mutating func shiftTimeline(by interval: TimeInterval) {
+        guard interval != 0 else { return }
+        func shift(_ date: Date?) -> Date? { date?.addingTimeInterval(interval) }
+        states = states.mapValues { state in
+            var state = state
+            state.crossedSince = shift(state.crossedSince)
+            state.firedAt = shift(state.firedAt)
+            state.lastNotifiedAt = shift(state.lastNotifiedAt)
+            state.snoozedUntil = shift(state.snoozedUntil)
+            return state
+        }
+        trendStates = trendStates.mapValues { state in
+            var state = state
+            state.snoozedUntil = shift(state.snoozedUntil)
+            return state
+        }
+        recent = recent.map { $0.retimed(to: $0.timestamp.addingTimeInterval(interval)) }
+        if let last = recent.last { record(last.timestamp, String(format: "timeline shifted by %.0f s", interval)) }
+    }
+
     /// Ids of rules that are currently past their threshold (for the home screen status).
     public var activeRuleIDs: [UUID] {
         states.filter { $0.value.crossedSince != nil }.map(\.key)

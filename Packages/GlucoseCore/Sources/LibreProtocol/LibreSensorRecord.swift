@@ -14,6 +14,9 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
     public var unlockCount: Int
     /// CoreBluetooth identifier, stored once a packet from this peripheral decrypted correctly.
     public var peripheralIdentifier: UUID?
+    /// The sensor's Bluetooth MAC address, from its answer to the enable-streaming command
+    /// (most significant byte first). Newer sensors advertise it as their name.
+    public var bluetoothAddress: [UInt8]?
     public var calibration: Calibration
     public var calibrationPoints: [CalibrationPoint]
     public var pairedAt: Date
@@ -30,6 +33,7 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
         self.maxLifeMinutes = maxLifeMinutes > 0 ? maxLifeMinutes : LibreSensorType(patchInfo: patchInfo).lifetimeMinutes
         self.unlockCount = 0
         self.peripheralIdentifier = nil
+        self.bluetoothAddress = nil
         self.calibration = .uncalibrated
         self.calibrationPoints = []
         self.pairedAt = now
@@ -79,6 +83,13 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
         calibrationPoints = calibrationPoints.filter { date.timeIntervalSince($0.date) <= Calibration.maxAgeHours * 3600 }
         calibration = Calibration.fit(calibrationPoints, now: date)
         return calibration
+    }
+
+    /// The MAC address in the sensor's 6-byte answer to the enable-streaming command, which sends it
+    /// least significant byte first (as DiaBLE reads it).
+    public static func bluetoothAddress(fromEnableResponse response: [UInt8]?) -> [UInt8]? {
+        guard let response, response.count == 6 else { return nil }
+        return Array(response.reversed())
     }
 
     /// Converts raw sensor readings into glucose readings, skipping warm-up and error values.

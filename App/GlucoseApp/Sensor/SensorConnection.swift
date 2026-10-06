@@ -34,9 +34,14 @@ final class SensorConnection {
 
     enum Event {
         case paired
+        /// An NFC scan of the paired sensor worked.
+        case scanned
         case bluetoothOff
         case sensorEnded
         case error(String)
+        /// The sensor's start time moved by `interval` (the phone clock changed or drifted):
+        /// its readings must be re-dated before new ones arrive.
+        case timelineShifted(serial: String, activatedAt: Date, interval: TimeInterval)
     }
 
     struct RawSample: Equatable {
@@ -104,6 +109,10 @@ final class SensorConnection {
     @ObservationIgnored private let stores: AppStores
     @ObservationIgnored private var running = false
     @ObservationIgnored private var demoRaw: ((Int) -> Int)?
+    @ObservationIgnored private var expiryTimer: Timer?
+    /// Packets that didn't decrypt, per peripheral not yet confirmed as ours.
+    @ObservationIgnored private var unconfirmedFailures: [UUID: Int] = [:]
+    static let unconfirmedFailureLimit = 3
     @ObservationIgnored private let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm:ss"
@@ -132,18 +141,51 @@ final class SensorConnection {
             status = .notPaired
             return
         }
-        if Date() >= record.expiresAt {
-            status = .ended
-            return
-        }
-        status = .searching
+        if endIfExpired(notify: false) { return }
+        status = ble.isPoweredOff ? .bluetoothOff : .searching
         ble.knownPeripheralID = record.peripheralIdentifier
+        ble.expectedSerial = record.serial
+        ble.expectedAddress = record.bluetoothAddress
         ble.start()
+        scheduleExpiryCheck()
     }
 
     func stop() {
         running = false
+        expiryTimer?.invalidate()
         ble.stop()
+    }
+
+    /// Call when the app comes to the foreground: catches a sensor that reached the end of its
+    /// life while the app was suspended.
+    func appDidBecomeActive() {
+        guard running else { return }
+        endIfExpired(notify: false)
+    }
+
+    /// Ends the sensor once its wear time is over, also when its last packet came just before
+    /// the end and no packet will ever report it. Returns true if the sensor has ended.
+    @discardableResult
+    private func endIfExpired(notify: Bool) -> Bool {
+        guard let record, Date() >= record.expiresAt else { return false }
+        guard status != .ended else { return true }
+        status = .ended
+        history.markEnded(id: record.uid.hexString, at: min(Date(), record.expiresAt), reason: .expired)
+        saveHistory()
+        expiryTimer?.invalidate()
+        ble.stop()
+        if notify { onEvent?(.sensorEnded) }
+        return true
+    }
+
+    private func scheduleExpiryCheck() {
+        expiryTimer?.invalidate()
+        guard running, let record else { return }
+        let interval = record.expiresAt.timeIntervalSinceNow + 1
+        guard interval > 0 else { return }
+        expiryTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { _ = self?.endIfExpired(notify: true) }
+        }
     }
 
     func forget() {
@@ -152,6 +194,8 @@ final class SensorConnection {
             saveHistory()
         }
         ble.resetForNewSensor()
+        expiryTimer?.invalidate()
+        unconfirmedFailures = [:]
         record = nil
         stores.sensor.delete()
         status = .notPaired
@@ -165,6 +209,7 @@ final class SensorConnection {
         record = restored
         save()
         ble.resetForNewSensor()
+        unconfirmedFailures = [:]
         ble.knownPeripheralID = restored.peripheralIdentifier
         log("Sensor restored from backup")
     }
@@ -197,8 +242,11 @@ final class SensorConnection {
                 throw LibreProtocolError.unsupportedSensor("sensor state is \(fram.state.description)")
             }
             // Re-pairing the same sensor (e.g. after LibreLink took it back) keeps its calibration.
-            let newRecord = LibreSensorRecord.paired(uid: scan.uid, patchInfo: scan.patchInfo, ageMinutes: fram.ageMinutes,
+            var newRecord = LibreSensorRecord.paired(uid: scan.uid, patchInfo: scan.patchInfo, ageMinutes: fram.ageMinutes,
                                                      maxLifeMinutes: fram.maxLifeMinutes, now: Date(), previous: record)
+            newRecord.bluetoothAddress = LibreSensorRecord.bluetoothAddress(fromEnableResponse: scan.streamingResponse)
+            // A different sensor: never connect to the old one's peripheral again (it may still be advertising).
+            let previousPeripheral = record.flatMap { $0.uid == newRecord.uid ? nil : $0.peripheralIdentifier }
             record = newRecord
             save()
             history.record(SensorHistoryEntry(
@@ -211,7 +259,8 @@ final class SensorConnection {
             log("Paired \(newRecord.type.displayName), serial \(newRecord.serial), age \(fram.ageMinutes) min")
             importFRAM(fram, record: newRecord)
 
-            ble.resetForNewSensor()
+            ble.resetForNewSensor(avoiding: previousPeripheral)
+            unconfirmedFailures = [:]
             onEvent?(.paired)
             start()
         } catch NFCReadError.cancelled {
@@ -234,20 +283,20 @@ final class SensorConnection {
         do {
             let scan = try await nfc.scan(.read, allowUnverified: allowUnverifiedTypes)
             let fram = try decodeAndLog(scan)
-            guard scan.uid == record.uid else {
-                throw LibreProtocolError.unsupportedSensor("this is a different sensor; pair it instead")
-            }
+            guard scan.uid == record.uid else { throw NFCReadError.differentSensor }
             if fram.state == .failure {
                 history.markEnded(id: record.uid.hexString, at: Date(), reason: .failed)
                 saveHistory()
             }
             importFRAM(fram, record: record)
             log("NFC scan imported \(fram.trend.count + fram.history.count) values")
+            onEvent?(.scanned)
         } catch NFCReadError.cancelled {
             log("NFC scan cancelled")
         } catch {
             logFailedRead(error)
-            fail(error)
+            // A failed scan says nothing about the Bluetooth link, so the status stays as it is.
+            fail(error, updatesStatus: false)
         }
     }
 
@@ -401,7 +450,17 @@ final class SensorConnection {
 
     private func handle(_ event: LibreBLE.Event) {
         switch event {
+        case .poweredOn:
+            // Bluetooth is back: show what the sensor is doing instead of "Bluetooth is off".
+            guard status == .bluetoothOff else { break }
+            if record == nil {
+                status = .notPaired
+            } else if !endIfExpired(notify: false), running {
+                status = .searching
+            }
         case .poweredOff:
+            // An ended or missing sensor stays that way; Bluetooth doesn't matter then.
+            guard status != .ended, status != .notPaired else { break }
             status = .bluetoothOff
             if running, record != nil { onEvent?(.bluetoothOff) }
         case .unauthorized:
@@ -414,6 +473,8 @@ final class SensorConnection {
         case .connected(let id):
             log("Connected to \(id.uuidString.prefix(8))")
         case .disconnected:
+            // A sensor at the end of its life stops sending and drops the link.
+            if endIfExpired(notify: true) { break }
             log("Disconnected, waiting to reconnect")
             if status == .connected { status = .connecting }
         case .packet(let packet, let id):
@@ -450,21 +511,37 @@ final class SensorConnection {
             if record.peripheralIdentifier == id {
                 log("Corrupt packet ignored: \(error)")
             } else {
-                log("Packet from another device rejected")
-                ble.reject(id)
+                // One corrupt packet from our own sensor shouldn't lock it out: allow a few.
+                let failures = (unconfirmedFailures[id] ?? 0) + 1
+                unconfirmedFailures[id] = failures
+                if failures >= Self.unconfirmedFailureLimit {
+                    unconfirmedFailures[id] = nil
+                    log("Packets from \(id.uuidString.prefix(8)) don't decode: another device, looking elsewhere")
+                    ble.reject(id, for: 10 * 60)
+                } else {
+                    log("Packet didn't decode (\(failures) of \(Self.unconfirmedFailureLimit))")
+                }
             }
             return
         }
 
         if record.peripheralIdentifier != id {
             record.peripheralIdentifier = id
+            unconfirmedFailures = [:]
             ble.confirm(id)
             log("Sensor confirmed")
         }
-        // Keep the timeline anchored to the sensor's own clock.
+        // Keep the timeline anchored to the sensor's own clock. If the phone clock changed or
+        // drifted, the readings so far are re-dated too, or new ones would sort before them.
         if abs(record.ageMinutes(at: Date()) - parsed.ageMinutes) > 2 {
             let aligned = (Date().timeIntervalSince1970 / 60).rounded(.down) * 60
+            let oldStart = record.activatedAt
             record.activatedAt = Date(timeIntervalSince1970: aligned - Double(parsed.ageMinutes) * 60)
+            let interval = record.activatedAt.timeIntervalSince(oldStart)
+            log(String(format: "Sensor clock re-anchored by %+.0f min", interval / 60))
+            onEvent?(.timelineShifted(serial: record.serial, activatedAt: record.activatedAt, interval: interval))
+            self.record = record
+            scheduleExpiryCheck()
         }
         self.record = record
         save()
@@ -598,9 +675,9 @@ final class SensorConnection {
         try? stores.sensorHistory.save(history)
     }
 
-    private func fail(_ error: Error) {
+    private func fail(_ error: Error, updatesStatus: Bool = true) {
         let message = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-        status = .error(message)
+        if updatesStatus { status = .error(message) }
         log("Error: \(message)")
         onEvent?(.error(message))
     }

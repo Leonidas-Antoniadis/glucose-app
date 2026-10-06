@@ -75,6 +75,63 @@ public final class ReadingArchive: @unchecked Sendable {
         return ReadingPipeline.merge([], with: readings)
     }
 
+    /// Re-dates one sensor's stored readings from its minute counter (see `ReadingPipeline.retimed`)
+    /// and rewrites the day files they are in. A sensor lives at most about 15 days, so only the
+    /// files from two days before `activatedAt` to two days after `end` are touched.
+    public func retime(sensorSerial: String, activatedAt: Date, through end: Date) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        // Step in fixed 24-hour steps from a UTC instant: file names are UTC days.
+        var urls: [URL] = []
+        var day = activatedAt.addingTimeInterval(-2 * 86_400)
+        let last = max(end, activatedAt).addingTimeInterval(2 * 86_400)
+        while day <= last, urls.count < 40 {
+            let url = fileURL(for: day)
+            if !urls.contains(url) { urls.append(url) }
+            day = day.addingTimeInterval(86_400)
+        }
+
+        var kept: [GlucoseReading] = []
+        var touchedFiles: [URL] = []
+        var changed = false
+        for url in urls {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            let readings = data.split(separator: 0x0A).compactMap { try? decoder.decode(GlucoseReading.self, from: Data($0)) }
+            guard readings.contains(where: { $0.sensorSerial == sensorSerial }) else { continue }
+            touchedFiles.append(url)
+            for reading in readings {
+                if reading.sensorSerial == sensorSerial {
+                    let timestamp = activatedAt.addingTimeInterval(Double(reading.minuteIndex) * 60)
+                    if timestamp != reading.timestamp { changed = true }
+                    kept.append(reading.retimed(to: timestamp))
+                } else {
+                    kept.append(reading)
+                }
+            }
+        }
+        guard changed else { return }
+
+        var contents: [URL: Data] = [:]
+        for reading in kept {
+            contents[fileURL(for: reading.timestamp), default: Data()].append(try encoder.encode(reading))
+            contents[fileURL(for: reading.timestamp), default: Data()].append(0x0A)
+        }
+        for url in touchedFiles where contents[url] == nil {
+            try? fileManager.removeItem(at: url)
+        }
+        for (url, data) in contents {
+            if touchedFiles.contains(url) || !fileManager.fileExists(atPath: url.path) {
+                try data.write(to: url, options: .atomic)
+            } else {
+                // A reading moved into a day file this pass didn't read: add to it.
+                let handle = try FileHandle(forWritingTo: url)
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+            }
+        }
+    }
+
     /// Deletes day files that end before `date`.
     public func prune(olderThan date: Date) throws {
         lock.lock()

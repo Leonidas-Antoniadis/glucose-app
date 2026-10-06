@@ -13,9 +13,11 @@ enum NFCReadError: LocalizedError {
     case alreadyStarted(String)
     case startFailed(String)
     case startedNotPaired(String)
+    case differentSensor
 
     var errorDescription: String? {
         switch self {
+        case .differentSensor: return "This is a different sensor than the one paired. To use it, tap Pair sensor on the Sensor screen."
         case .undecodable: return "This sensor's data couldn't be decoded, so it was not paired. Nothing on the sensor was changed and LibreLink keeps working. Share the raw captures to help fix this."
         case .notReady(let state):
             let hint = state == LibreFRAM.State.notActivated.description ? " To use a new sensor, tap Start a new sensor." : ""
@@ -171,13 +173,20 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
                     }
                     if let activation { self.onCapture?("NFC activate", activation) }
 
-                    // Read again to confirm the sensor really started.
-                    fram = try await Self.readFRAM(libreTag)
+                    // Read again to confirm the sensor really started. The start command was accepted,
+                    // so from here on the sensor has most likely started: every failure says so.
+                    do {
+                        fram = try await Self.readFRAM(libreTag)
+                    } catch {
+                        throw NFCReadError.startedNotPaired("the confirming read failed: \(error.localizedDescription)")
+                    }
                     self.remember(RawRead(uid: uid, patchInfo: patchInfo, fram: fram))
                     self.onCapture?("NFC fram", fram)
                     let after = try? LibreFRAM.state(decrypted: Libre2Crypto.decryptFRAM(uid: uid, patchInfo: patchInfo, data: fram))
-                    guard after == .warmingUp || after == .active else {
-                        throw NFCReadError.startFailed("state afterwards: \(after?.description ?? "unreadable")")
+                    switch after {
+                    case .some(.warmingUp), .some(.active): break
+                    case .none: throw NFCReadError.startedNotPaired("its new state couldn't be read yet")
+                    case .some(let state): throw NFCReadError.startFailed("state afterwards: \(state.description)")
                     }
                 }
 
@@ -187,7 +196,16 @@ final class LibreNFCReader: NSObject, NFCTagReaderSessionDelegate {
                         response = try await Self.enableStreaming(libreTag, uid: uid, patchInfo: patchInfo, fram: fram)
                     } catch {
                         guard mode == .start else { throw error }
-                        throw NFCReadError.startedNotPaired((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+                        // The .undecodable and .notReady texts say nothing on the sensor changed,
+                        // which isn't true once it has started.
+                        switch error as? NFCReadError {
+                        case .some(.undecodable):
+                            throw NFCReadError.startedNotPaired("the sensor's data isn't readable yet")
+                        case .some(.notReady(let state)):
+                            throw NFCReadError.startedNotPaired("sensor state: \(state)")
+                        default:
+                            throw NFCReadError.startedNotPaired((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+                        }
                     }
                 }
                 switch mode {

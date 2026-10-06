@@ -363,6 +363,7 @@ final class AppModel {
     private func handleSensorEvent(_ event: SensorConnection.Event) {
         switch event {
         case .paired:
+            lastError = nil
             if let record = sensor.record {
                 notifications.scheduleWarmUpDone(at: record.warmUpEndsAt)
             }
@@ -378,8 +379,20 @@ final class AppModel {
             }
         case .sensorEnded:
             notifications.post(title: "Sensor ended", body: "Start a new sensor with LibreLink, then pair it in this app.")
+        case .scanned:
+            lastError = nil
         case .error(let message):
             lastError = message
+        case .timelineShifted(let serial, let activatedAt, let interval):
+            // The phone clock changed or drifted: re-date this sensor's readings everywhere, so
+            // new readings don't sort before old ones (that would stop alerts and updates).
+            readings = ReadingPipeline.retimed(readings, sensorSerial: serial, activatedAt: activatedAt)
+            engine.shiftTimeline(by: interval)
+            do {
+                try stores.archive?.retime(sensorSerial: serial, activatedAt: activatedAt, through: Date())
+            } catch {
+                lastError = "Couldn't update saved readings: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -534,6 +547,8 @@ final class AppModel {
             if pausedInBackground {
                 pausedInBackground = false
                 if !isDemo { sensor.start() }
+            } else if !isDemo {
+                sensor.appDidBecomeActive()
             }
         case .background:
             isActive = false
