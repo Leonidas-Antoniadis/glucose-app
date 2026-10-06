@@ -3,6 +3,17 @@ import ActivityKit
 import WidgetKit
 import GlucoseCore
 
+/// What the Live Activity shows besides the value: a sounding alert, the last hour and the
+/// last dose and meal.
+struct LiveActivityExtras: Equatable {
+    var alert: ActivityAlert?
+    var points: [Double]?
+    var change15: Double?
+    var lastFastUnits: Double?
+    var lastFastAt: Date?
+    var lastFoodAt: Date?
+}
+
 /// Keeps the home-screen widgets and the lock-screen Live Activity current.
 @MainActor
 final class SurfaceUpdater {
@@ -16,7 +27,8 @@ final class SurfaceUpdater {
     static let backgroundReloadInterval: TimeInterval = 20 * 60
 
     func update(latest: GlucoseReading, arrow: TrendArrow, recent: [GlucoseReading], unit: GlucoseUnit,
-                liveActivityEnabled: Bool, isDemo: Bool = false, isForeground: Bool = true) {
+                liveActivityEnabled: Bool, isDemo: Bool = false, isForeground: Bool = true,
+                extras: LiveActivityExtras = LiveActivityExtras()) {
         // One point per 5 minutes is plenty for a widget sparkline; it always ends at the value shown.
         let points = ReadingPipeline.sparkline(recent).map { WidgetSnapshot.Point(date: $0.timestamp, mgdL: $0.mgdL) }
         WidgetSnapshot(mgdL: latest.mgdL, timestamp: latest.timestamp, arrow: arrow.symbol,
@@ -33,10 +45,17 @@ final class SurfaceUpdater {
         lastZone = zone
 
         if liveActivityEnabled {
-            updateLiveActivity(GlucoseActivityAttributes.ContentState(
-                mgdL: latest.mgdL, arrow: arrow.symbol, timestamp: latest.timestamp, unitRaw: unit.rawValue, isDemo: isDemo),
-                isForeground: isForeground)
+            updateLiveActivity(state(latest: latest, arrow: arrow, unit: unit, isDemo: isDemo, extras: extras),
+                               isForeground: isForeground)
         }
+    }
+
+    private func state(latest: GlucoseReading, arrow: TrendArrow, unit: GlucoseUnit, isDemo: Bool,
+                       extras: LiveActivityExtras) -> GlucoseActivityAttributes.ContentState {
+        GlucoseActivityAttributes.ContentState(
+            mgdL: latest.mgdL, arrow: arrow.symbol, timestamp: latest.timestamp, unitRaw: unit.rawValue, isDemo: isDemo,
+            alert: extras.alert, points: extras.points, change15: extras.change15,
+            lastFastUnits: extras.lastFastUnits, lastFastAt: extras.lastFastAt, lastFoodAt: extras.lastFoodAt)
     }
 
     private func content(_ state: GlucoseActivityAttributes.ContentState) -> ActivityContent<GlucoseActivityAttributes.ContentState> {
@@ -73,11 +92,11 @@ final class SurfaceUpdater {
     var liveActivitiesAllowed: Bool { ActivityAuthorizationInfo().areActivitiesEnabled }
 
     /// Ends any current Live Activity and starts a fresh one. Only works while the app is in the foreground.
-    func restartLiveActivity(latest: GlucoseReading, arrow: TrendArrow, unit: GlucoseUnit, isDemo: Bool = false) {
-        let state = GlucoseActivityAttributes.ContentState(
-            mgdL: latest.mgdL, arrow: arrow.symbol, timestamp: latest.timestamp, unitRaw: unit.rawValue, isDemo: isDemo)
+    func restartLiveActivity(latest: GlucoseReading, arrow: TrendArrow, unit: GlucoseUnit, isDemo: Bool = false,
+                             extras: LiveActivityExtras = LiveActivityExtras()) {
+        let newState = state(latest: latest, arrow: arrow, unit: unit, isDemo: isDemo, extras: extras)
         let old = Activity<GlucoseActivityAttributes>.activities
-        activity = try? Activity.request(attributes: GlucoseActivityAttributes(), content: content(state), pushType: nil)
+        activity = try? Activity.request(attributes: GlucoseActivityAttributes(), content: content(newState), pushType: nil)
         activityStartedAt = activity == nil ? nil : Date()
         for current in old {
             Task { await current.end(nil, dismissalPolicy: .immediate) }
@@ -86,12 +105,13 @@ final class SurfaceUpdater {
 
     /// When the app comes to the foreground: starts a fresh Live Activity if there is none or the
     /// current one is close to the 8-hour limit, so it doesn't freeze or vanish overnight.
-    func renewLiveActivityIfNeeded(latest: GlucoseReading?, arrow: TrendArrow, unit: GlucoseUnit, isDemo: Bool, enabled: Bool) {
+    func renewLiveActivityIfNeeded(latest: GlucoseReading?, arrow: TrendArrow, unit: GlucoseUnit, isDemo: Bool, enabled: Bool,
+                                   extras: LiveActivityExtras = LiveActivityExtras()) {
         guard enabled, let latest, liveActivitiesAllowed else { return }
         let live = Activity<GlucoseActivityAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
         let old = activityStartedAt.map { Date().timeIntervalSince($0) > 6 * 3600 } ?? true
         if live.isEmpty || old {
-            restartLiveActivity(latest: latest, arrow: arrow, unit: unit, isDemo: isDemo)
+            restartLiveActivity(latest: latest, arrow: arrow, unit: unit, isDemo: isDemo, extras: extras)
         }
     }
 

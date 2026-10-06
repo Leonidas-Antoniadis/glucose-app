@@ -6,7 +6,10 @@ import GlucoseCore
 final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     static let alertCategory = "GLUCOSE_ALERT"
+    /// Low alerts also offer Treating.
+    static let lowAlertCategory = "GLUCOSE_ALERT_LOW"
     static let snoozeAction = "SNOOZE"
+    static let treatingAction = "TREATING"
     private static let missingDataPrefix = "missing-data-"
     private static let sensorPrefix = "sensor-reminder-"
     private static let signaturePrefix = "signature-"
@@ -16,15 +19,28 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// Called when the user taps Snooze on an alert notification, with the time the alert was sent.
     var onSnooze: (@MainActor (UUID, Date?) -> Void)?
+    /// Called when the user taps Treating on a low alert notification.
+    var onTreating: (@MainActor (UUID, Date?) -> Void)?
+
+    /// Richer words and a 2-hour chart for an alert notification.
+    struct AlertDetails {
+        var title: String
+        var body: String
+        var chartURL: URL?
+    }
     /// True once Apple's Critical Alerts entitlement is granted and the user allowed it.
     private(set) var criticalAllowed = false
 
     override init() {
         super.init()
         center.delegate = self
-        let snooze = UNNotificationAction(identifier: Self.snoozeAction, title: "Snooze", options: [])
+        let snooze = UNNotificationAction(identifier: Self.snoozeAction, title: "Snooze", options: [],
+                                          icon: UNNotificationActionIcon(systemImageName: "bell.slash"))
+        let treating = UNNotificationAction(identifier: Self.treatingAction, title: "Treating", options: [],
+                                            icon: UNNotificationActionIcon(systemImageName: "drop.fill"))
         center.setNotificationCategories([
             UNNotificationCategory(identifier: Self.alertCategory, actions: [snooze], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: Self.lowAlertCategory, actions: [treating, snooze], intentIdentifiers: [], options: []),
         ])
     }
 
@@ -62,9 +78,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// `alarmPlaying`: the app is already playing the sound itself, loud enough to hear, so the
     /// notification stays quiet.
-    func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false) {
-        center.add(UNNotificationRequest(identifier: UUID().uuidString,
-                                         content: content(for: event, unit: unit, alarmPlaying: alarmPlaying), trigger: nil))
+    func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false, details: AlertDetails? = nil) {
+        let content = content(for: event, unit: unit, alarmPlaying: alarmPlaying)
+        if let details {
+            content.title = details.title
+            content.body = details.body
+            if let url = details.chartURL,
+               let chart = try? UNNotificationAttachment(identifier: "chart", url: url, options: nil) {
+                content.attachments = [chart]
+            }
+        }
+        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
     /// Demo only: the alerts the simulated sensor will raise while iOS keeps the app suspended.
@@ -90,7 +114,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         case .reminder(let count): content.body = "Still \(value) (reminder \(count))"
         case .afterSnooze: content.body = "Still \(value) after snooze"
         }
-        content.categoryIdentifier = Self.alertCategory
+        content.categoryIdentifier = event.direction == .low ? Self.lowAlertCategory : Self.alertCategory
         content.userInfo = ["ruleID": event.ruleID.uuidString]
         content.threadIdentifier = event.direction.rawValue
         let critical = event.isCritical && criticalAllowed
@@ -216,11 +240,14 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.actionIdentifier == Self.snoozeAction,
-           let idString = response.notification.request.content.userInfo["ruleID"] as? String,
+        if let idString = response.notification.request.content.userInfo["ruleID"] as? String,
            let id = UUID(uuidString: idString) {
             let sentAt = response.notification.date
-            Task { @MainActor in self.onSnooze?(id, sentAt) }
+            switch response.actionIdentifier {
+            case Self.snoozeAction: Task { @MainActor in self.onSnooze?(id, sentAt) }
+            case Self.treatingAction: Task { @MainActor in self.onTreating?(id, sentAt) }
+            default: break
+            }
         }
         completionHandler()
     }

@@ -81,6 +81,9 @@ final class AppModel {
         sensor.onReadings = { [weak self] readings, live in self?.ingest(readings, live: live) }
         sensor.onEvent = { [weak self] event in self?.handleSensorEvent(event) }
         notifications.onSnooze = { [weak self] id, sentAt in self?.acknowledge(ruleID: id, eventDate: sentAt) }
+        notifications.onTreating = { [weak self] id, sentAt in self?.handleLockScreenAction(.treating, ruleID: id, eventDate: sentAt) }
+        // The Live Activity's Snooze and Treating buttons.
+        AlertIntentBridge.shared.handler = { [weak self] action, id in self?.handleLockScreenAction(action, ruleID: id) }
         // An alarm cut off by a call or Siri that can't resume: send the alert again with a sound.
         alarm.onResumeFailed = { [weak self] in
             guard let self, let event = self.lastAlarmEvent else { return }
@@ -386,7 +389,53 @@ final class AppModel {
     private func updateSurfaces() {
         guard let latest else { return }
         surfaces.update(latest: latest, arrow: trendArrow, recent: readings(lastHours: 3), unit: unit,
-                        liveActivityEnabled: settings.liveActivity, isDemo: isDemo, isForeground: isActive)
+                        liveActivityEnabled: settings.liveActivity, isDemo: isDemo, isForeground: isActive,
+                        extras: liveActivityExtras)
+    }
+
+    /// The Live Activity's alert banner, last hour and last dose and meal.
+    var liveActivityExtras: LiveActivityExtras {
+        var extras = LiveActivityExtras()
+        extras.points = Array(ReadingPipeline.sparkline(readings(lastHours: 1)).map(\.mgdL).suffix(13))
+        extras.change15 = AlertMessage.change(in: readings(lastHours: 0.5))
+        // The newest threshold alert that is still sounding (a trend alert has no "since").
+        let ruleIDs = Set(settings.ruleSet.rules.map(\.id))
+        if let event = recentEvents.first(where: { ruleIDs.contains($0.ruleID) && engine.isFiring($0.ruleID) }) {
+            let state = engine.states[event.ruleID]
+            extras.alert = ActivityAlert(name: event.ruleName, ruleID: event.ruleID.uuidString, isLow: event.direction == .low,
+                                         since: state?.crossedSince ?? event.date,
+                                         snoozedUntil: state?.snoozedUntil.flatMap { $0 > Date() ? $0 : nil })
+        }
+        let dayAgo = Date().addingTimeInterval(-24 * 3600)
+        if let fast = QuickLog.lastInsulin(.rapid, in: logbook), fast.date > dayAgo {
+            extras.lastFastUnits = fast.units
+            extras.lastFastAt = fast.date
+        }
+        if let meal = QuickLog.lastMeal(in: logbook), meal > dayAgo {
+            extras.lastFoodAt = meal
+        }
+        return extras
+    }
+
+    /// The words and 2-hour chart of an alert notification.
+    private func alertDetails(for event: AlertEvent) -> NotificationService.AlertDetails {
+        let rule = settings.ruleSet.rules.first { $0.id == event.ruleID }
+        let since = rule == nil ? nil : engine.states[event.ruleID]?.crossedSince
+        return NotificationService.AlertDetails(
+            title: AlertMessage.title(for: event, unit: unit, arrow: trendArrow(at: event.date)),
+            body: AlertMessage.body(for: event, unit: unit, change15: AlertMessage.change(in: readings(lastHours: 0.5)),
+                                    thresholdMgdL: rule?.thresholdMgdL, since: since,
+                                    time: { $0.formatted(date: .omitted, time: .shortened) }),
+            chartURL: AlertChartRenderer.render(readings: readings(lastHours: 2), unit: unit, threshold: rule?.thresholdMgdL))
+    }
+
+    /// Snooze or Treating from a notification or the Live Activity. Treating also logs it, so
+    /// the logbook shows when the low was treated.
+    func handleLockScreenAction(_ action: AlertIntentAction, ruleID: UUID, eventDate: Date? = nil) {
+        if action == .treating {
+            addLogEntry(LogEntry(date: Date(), kind: .meal(carbsGrams: nil), text: "Treating a low"))
+        }
+        acknowledge(ruleID: ruleID, eventDate: eventDate)
     }
 
     /// Replaces the scheduled "No glucose data" notifications, counting from `lastReading`.
@@ -427,7 +476,7 @@ final class AppModel {
                     // The notification only goes quiet if the app's alarm is clearly audible.
                     alarmHeard = AlarmPlayer.isClearlyAudible
                 }
-                notifications.deliver(event, unit: unit, alarmPlaying: alarmHeard)
+                notifications.deliver(event, unit: unit, alarmPlaying: alarmHeard, details: alertDetails(for: event))
                 if settings.speakValues, isActive, !alarmStarted {
                     voice.announce(event, unit: unit)
                 }
@@ -535,6 +584,8 @@ final class AppModel {
         alarm.stop()
         saveAlertState(force: true)
         if demoAhead { scheduleDemoAlertsAhead() }
+        // The Live Activity drops its Snooze button.
+        updateSurfaces()
     }
 
     /// Whether an alert is in an episode it already announced, so Snooze means something.
@@ -867,7 +918,7 @@ final class AppModel {
         }
         settings.liveActivity = true
         guard let latest = readings.last else { return "There is no glucose reading to show yet." }
-        surfaces.restartLiveActivity(latest: latest, arrow: trendArrow, unit: unit, isDemo: isDemo)
+        surfaces.restartLiveActivity(latest: latest, arrow: trendArrow, unit: unit, isDemo: isDemo, extras: liveActivityExtras)
         return nil
     }
 
@@ -899,7 +950,7 @@ final class AppModel {
             if wasInactive, started, let latest, !GlucoseShared.isStale(timestamp: latest.timestamp, at: Date()) || isDemo {
                 // A fresh Live Activity before iOS's 8-hour limit ends this one overnight.
                 surfaces.renewLiveActivityIfNeeded(latest: latest, arrow: trendArrow, unit: unit, isDemo: isDemo,
-                                                   enabled: settings.liveActivity)
+                                                   enabled: settings.liveActivity, extras: liveActivityExtras)
             }
         case .background:
             isActive = false

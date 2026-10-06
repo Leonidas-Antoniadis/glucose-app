@@ -120,6 +120,16 @@ struct WidgetSnapshot: Codable, Hashable {
     )
 }
 
+/// An alert that is sounding (or snoozed and not over yet), shown on the Live Activity.
+struct ActivityAlert: Codable, Hashable {
+    var name: String
+    var ruleID: String
+    var isLow: Bool
+    /// When glucose first went past the threshold in this episode.
+    var since: Date
+    var snoozedUntil: Date?
+}
+
 struct GlucoseActivityAttributes: ActivityAttributes {
     struct ContentState: Codable, Hashable {
         var mgdL: Double
@@ -128,7 +138,24 @@ struct GlucoseActivityAttributes: ActivityAttributes {
         var unitRaw: String
         /// Simulated by the demo.
         var isDemo: Bool? = nil
+        /// Set during an alert: the card turns red (low) or orange (high) with Snooze and Treating.
+        var alert: ActivityAlert? = nil
+        /// The last hour, one value per 5 minutes, oldest first, in mg/dL.
+        var points: [Double]? = nil
+        /// Change over the last 15 minutes, in mg/dL.
+        var change15: Double? = nil
+        var lastFastUnits: Double? = nil
+        var lastFastAt: Date? = nil
+        var lastFoodAt: Date? = nil
 
         var formattedValue: String { GlucoseShared.format(mgdL: mgdL, unitRaw: unitRaw) }
+
+        /// "−9", "+0.5" or "±0" in the display unit.
+        var formattedChange: String? {
+            guard let change15 else { return nil }
+            let size = GlucoseShared.format(mgdL: abs(change15), unitRaw: unitRaw)
+            if Double(size) == 0 { return "±0" }
+            return (change15 < 0 ? "−" : "+") + size
+        }
     }
 }
