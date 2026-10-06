@@ -110,11 +110,19 @@ public struct SignalStats: Codable, Hashable, Sendable {
     public mutating func linkLost(at date: Date, reason: OutageReason) {
         if countingSince == nil { countingSince = date }
         if let index = outages.indices.last, outages[index].end == nil {
-            if reason != .linkLost { outages[index].reason = reason }
+            // The first specific reason stays: Bluetooth off and then the app closed was a
+            // Bluetooth outage from the start.
+            if outages[index].reason == .linkLost { outages[index].reason = reason }
             return
         }
         outages.append(Outage(start: date, end: nil, reason: reason))
         if outages.count > Self.maxOutages { outages.removeFirst(outages.count - Self.maxOutages) }
+    }
+
+    /// Closes the open outage without data having come back, e.g. when the sensor ends.
+    public mutating func endOpenOutage(at date: Date) {
+        guard let index = outages.indices.last, outages[index].end == nil else { return }
+        outages[index].end = max(outages[index].start, date)
     }
 
     /// Data flows again: closes the open outage. One shorter than 2 minutes is a normal
@@ -163,7 +171,9 @@ public struct SignalStats: Codable, Hashable, Sendable {
             rssiCount += hour.rssiCount
         }
         summary.averageRSSI = rssiCount > 0 ? rssiSum / Double(rssiCount) : nil
-        let start = max(interval.start, countingSince ?? interval.end)
+        // Whole hours are counted, so the expected minutes start where the first counted hour does.
+        let firstHour = Date(timeIntervalSince1970: (interval.start.timeIntervalSince1970 / 3600).rounded(.down) * 3600)
+        let start = max(firstHour, countingSince ?? interval.end)
         summary.minutes = max(0, interval.end.timeIntervalSince(start) / 60)
         return summary
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import GlucoseCore
 
 /// Accuracy as more than one number: the average error with its range, the bias in plain
@@ -6,7 +7,6 @@ import GlucoseCore
 struct AccuracyView: View {
     @Environment(AppModel.self) private var model
     @State private var report: AccuracyReport?
-    @State private var csvURL: URL?
 
     var body: some View {
         List {
@@ -34,16 +34,16 @@ struct AccuracyView: View {
         }
         .navigationTitle("Accuracy")
         .toolbar {
-            if let csvURL {
+            if let report, !report.pairs.isEmpty {
                 ToolbarItem(placement: .topBarTrailing) {
-                    ShareLink(item: csvURL) { Label("Export accuracy data", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: AccuracyCSV(report: report), preview: SharePreview("Glucose accuracy.csv")) {
+                        Label("Export accuracy data", systemImage: "square.and.arrow.up")
+                    }
                 }
             }
         }
         .task(id: model.fingersticks.count) {
-            let built = await model.fullAccuracyReport()
-            report = built
-            csvURL = built.pairs.isEmpty ? nil : Self.writeCSV(built)
+            report = await model.fullAccuracyReport()
         }
     }
 
@@ -192,13 +192,17 @@ struct AccuracyView: View {
         }
     }
 
-    private static func writeCSV(_ report: AccuracyReport) -> URL? {
-        let url = AppStores.exportsDirectory.appendingPathComponent("Glucose accuracy.csv")
-        do {
-            try report.csv().write(to: url, atomically: true, encoding: .utf8)
-            return url
-        } catch {
-            return nil
+}
+
+/// The checks as a CSV file, written only when the user shares it.
+private struct AccuracyCSV: Transferable {
+    let report: AccuracyReport
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .commaSeparatedText) { csv in
+            let url = AppStores.exportsDirectory.appendingPathComponent("Glucose accuracy.csv")
+            try csv.report.csv().write(to: url, atomically: true, encoding: .utf8)
+            return SentTransferredFile(url)
         }
     }
 }

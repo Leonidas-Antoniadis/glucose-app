@@ -110,9 +110,12 @@ public struct FingerstickEntry: Codable, Hashable, Identifiable, Sendable {
     public var calibrationPointID: UUID?
     /// What LibreLink (or the reader) showed at the same moment, if typed in, to compare accuracy.
     public var libreLinkMgdL: Double?
+    /// Offered for calibration (whether or not it was used): such a stick isn't an independent
+    /// accuracy check, for example one refused as a likely test error and then retested.
+    public var offeredForCalibration: Bool?
 
     public init(id: UUID = UUID(), date: Date, mgdL: Double, usedForCalibration: Bool, sensorSerial: String? = nil,
-                calibrationPointID: UUID? = nil, libreLinkMgdL: Double? = nil) {
+                calibrationPointID: UUID? = nil, libreLinkMgdL: Double? = nil, offeredForCalibration: Bool? = nil) {
         self.id = id
         self.date = date
         self.mgdL = mgdL
@@ -120,6 +123,7 @@ public struct FingerstickEntry: Codable, Hashable, Identifiable, Sendable {
         self.sensorSerial = sensorSerial
         self.calibrationPointID = calibrationPointID
         self.libreLinkMgdL = libreLinkMgdL
+        self.offeredForCalibration = offeredForCalibration
     }
 }
 

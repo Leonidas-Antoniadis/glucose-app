@@ -220,4 +220,15 @@ final class AlertEngineTests: XCTestCase {
         XCTAssertTrue(fresh.log.contains { $0.contains("fired L70") })
         XCTAssertEqual(fresh.log.last?.hasSuffix("alert memory reset"), true)
     }
+
+    func testSnoozeAfterReadingsStoppedDoesNotSilenceTheNextLow() throws {
+        let low = rule("Lower", .low, 70, repeatEvery: 10)
+        var e = try engine([low])
+        XCTAssertEqual(run(&e, [90, 65]).last, ["Lower"])
+        // Readings stop; 30 minutes later Snooze is tapped on a Lock Screen card frozen since then.
+        XCTAssertFalse(e.acknowledge(ruleID: low.id, at: TestSupport.noon.addingTimeInterval(31 * 60)))
+        // Readings come back low: a new episode, and it sounds.
+        let fired = e.process(TestSupport.reading(62, minute: 40)).map { $0.ruleName }
+        XCTAssertEqual(fired, ["Lower"])
+    }
 }

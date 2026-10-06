@@ -7,6 +7,8 @@ import GlucoseCore
 struct BedtimeCard: View {
     @Environment(AppModel.self) private var model
     @State private var dismissed = false
+    /// Worked out once per reading: it scans two weeks of readings.
+    @State private var tonight: [String] = []
 
     var body: some View {
         if !dismissed {
@@ -14,6 +16,7 @@ struct BedtimeCard: View {
             TimelineView(.periodic(from: .now, by: 5)) { context in
                 content(now: context.date)
             }
+            .task(id: model.latest?.timestamp) { tonight = model.tonightSummary() }
         }
     }
 
@@ -33,7 +36,6 @@ struct BedtimeCard: View {
                     .foregroundStyle(toFix.isEmpty ? RangePalette.color(zone: 2) : Color.orange)
             }
             BedtimeChecklist(items: items, compact: true)
-            let tonight = model.tonightSummary(now: now)
             if !tonight.isEmpty {
                 Text("Tonight: " + tonight.joined(separator: " · "))
                     .font(.footnote)
@@ -66,11 +68,18 @@ struct BedtimeChecklist: View {
     let items: [BedtimeItem]
     /// On Home the passed checks fold into one line.
     var compact = false
+    /// Once the volume slider has shown, it stays while this screen is open: otherwise it would
+    /// vanish under the finger as the volume passes the threshold.
+    @State private var keepVolumeSlider = false
+
+    private func needsRow(_ item: BedtimeItem) -> Bool {
+        item.status != .ok || (item.id == "volume" && keepVolumeSlider)
+    }
 
     var body: some View {
-        let passed = items.filter { $0.status == .ok }
+        let passed = items.filter { !needsRow($0) }
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(items.filter { $0.status != .ok }) { item in
+            ForEach(items.filter(needsRow)) { item in
                 row(item)
             }
             if compact {
@@ -115,6 +124,17 @@ struct BedtimeChecklist: View {
 
     @ViewBuilder
     private func fix(_ item: BedtimeItem) -> some View {
+        if item.id == "volume", item.fix == .raiseVolume || keepVolumeSlider {
+            SystemVolumeSlider()
+                .frame(height: 34)
+                .onAppear { keepVolumeSlider = true }
+        } else {
+            otherFix(item)
+        }
+    }
+
+    @ViewBuilder
+    private func otherFix(_ item: BedtimeItem) -> some View {
         switch item.fix {
         case .raiseVolume:
             SystemVolumeSlider().frame(height: 34)
@@ -131,6 +151,8 @@ struct BedtimeChecklist: View {
                     for rule in set.rules where ids.contains(rule.id) {
                         var changed = rule
                         changed.isCritical = true
+                        // A silent rule would still make no sound through Silent mode.
+                        if changed.sound == .silent { changed.sound = .tune(name: "alarm_loud_low") }
                         try set.update(changed)
                     }
                 }
@@ -167,6 +189,7 @@ struct BedtimeChecklist: View {
 /// The whole check on its own screen, from Settings or the Home card.
 struct BedtimeCheckView: View {
     @Environment(AppModel.self) private var model
+    @State private var tonight: [String] = []
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 5)) { context in
@@ -177,7 +200,6 @@ struct BedtimeCheckView: View {
                 } footer: {
                     Text("Alarms the app plays itself follow the media volume. The phone's ring switch and Focus don't silence alerts set to sound through Silent mode.")
                 }
-                let tonight = model.tonightSummary(now: context.date)
                 if !tonight.isEmpty {
                     Section("Tonight") {
                         ForEach(tonight, id: \.self) { Text($0) }
@@ -185,6 +207,7 @@ struct BedtimeCheckView: View {
                 }
             }
         }
+        .task(id: model.latest?.timestamp) { tonight = model.tonightSummary() }
         .navigationTitle("Bedtime check")
     }
 }

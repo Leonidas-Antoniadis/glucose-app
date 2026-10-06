@@ -168,9 +168,11 @@ struct GlucoseLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 8) {
-                        if let alert = state.alert {
+                        if let alert = state.alert, !stale {
                             AlertBannerText(alert: alert)
                                 .font(.caption.bold())
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
                                 .foregroundStyle(alert.isLow ? Color.red : Color.orange)
                         }
                         HStack {
@@ -180,7 +182,7 @@ struct GlucoseLiveActivity: Widget {
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        if let alert = state.alert, !alert.isSnoozed {
+                        if let alert = state.alert, !alert.isSnoozed, !stale {
                             AlertButtons(alert: alert)
                         }
                     }
@@ -188,7 +190,7 @@ struct GlucoseLiveActivity: Widget {
             } compactLeading: {
                 Text(state.formattedValue)
                     .bold()
-                    .foregroundStyle(state.alert.map { $0.isLow ? Color.red : Color.orange } ?? color)
+                    .foregroundStyle(stale ? color : state.alert.map { $0.isLow ? Color.red : Color.orange } ?? color)
                     .strikethrough(stale)
             } compactTrailing: {
                 Text(stale ? "old" : state.arrow)
@@ -228,14 +230,14 @@ struct AlertButtons: View {
         HStack(spacing: 10) {
             Button(intent: SnoozeAlertIntent(ruleID: alert.ruleID)) {
                 Label("Snooze", systemImage: "bell.slash")
-                    .frame(maxWidth: .infinity, minHeight: 36)
-                    .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity, minHeight: 32)
+                    .background(Color.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(.plain)
             if alert.isLow {
                 Button(intent: TreatingLowIntent(ruleID: alert.ruleID)) {
                     Label("Treating", systemImage: "drop.fill")
-                        .frame(maxWidth: .infinity, minHeight: 36)
+                        .frame(maxWidth: .infinity, minHeight: 32)
                         .background(Color.orange.opacity(0.22), in: RoundedRectangle(cornerRadius: 12))
                         .foregroundStyle(Color.orange)
                 }
@@ -252,57 +254,60 @@ struct LiveActivityLockScreenView: View {
     let state: GlucoseActivityAttributes.ContentState
     let isStale: Bool
 
+    // iOS cuts a Lock Screen Live Activity at 160 pt. With an alert: banner ~26, value row ~49,
+    // subline ~16, buttons ~40, bottom padding 10, about 141 pt.
     var body: some View {
         let stale = isStale || GlucoseShared.isStale(timestamp: state.timestamp, at: Date())
         let valueColor = stale ? Color.secondary : WidgetColors.color(mgdL: state.mgdL)
+        // An old card doesn't offer Snooze: whatever was sounding then may be over by now.
+        let alert = stale ? nil : state.alert
         VStack(alignment: .leading, spacing: 0) {
-            if let alert = state.alert {
+            if let alert {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                     AlertBannerText(alert: alert)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.75)
                 }
                 .font(.caption.bold())
                 .foregroundStyle(alert.isLow ? Color.red : Color.orange)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background((alert.isLow ? Color.red : Color.orange).opacity(0.18))
             }
             HStack(alignment: .center, spacing: 10) {
                 Text(state.formattedValue)
-                    .font(.system(size: 44, weight: .bold, design: .rounded))
+                    .font(.system(size: alert == nil ? 44 : 36, weight: .bold, design: .rounded))
                     .foregroundStyle(valueColor)
                     .strikethrough(stale)
+                    .lineLimit(1)
+                    .layoutPriority(1)
                 Text(stale ? "old" : state.arrow)
-                    .font(stale ? .headline : .largeTitle)
+                    .font(stale ? .headline : .title)
                     .foregroundStyle(valueColor)
-                Spacer()
+                Spacer(minLength: 4)
                 if let points = state.points, points.count >= 2 {
                     LastHourLine(points: points, color: valueColor)
-                        .frame(width: 110, height: 40)
+                        .frame(width: 100, height: alert == nil ? 40 : 32)
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.top, alert == nil ? 12 : 6)
             subline
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .padding(.horizontal, 16)
-                .padding(.top, 2)
-            if let alert = state.alert, !alert.isSnoozed {
+            if let alert, !alert.isSnoozed {
                 AlertButtons(alert: alert)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                doses
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
             }
         }
-        .padding(.bottom, 12)
+        .padding(.bottom, alert == nil ? 12 : 10)
+        .accessibilityElement(children: .contain)
     }
 
     /// "mg/dL · −9 in 15 min · 1 min ago"
@@ -313,17 +318,6 @@ struct LiveActivityLockScreenView: View {
             text = text + Text(" · \(change) in 15 min")
         }
         return text + Text(" · ") + Text(state.timestamp, style: .relative) + Text(" ago")
-    }
-
-    private var doses: some View {
-        HStack(spacing: 14) {
-            if let at = state.lastFastAt, let units = state.lastFastUnits {
-                Text("Fast \(units.formatted(.number.precision(.fractionLength(0...1)))) U · ") + Text(at, style: .relative) + Text(" ago")
-            }
-            if let at = state.lastFoodAt {
-                Text("Food · ") + Text(at, style: .relative) + Text(" ago")
-            }
-        }
     }
 }
 

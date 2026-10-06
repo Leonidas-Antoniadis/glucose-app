@@ -194,13 +194,17 @@ struct SignalSections: View {
     private func gapRows(window: DateInterval, recent: [GlucoseReading], now: Date) -> [GapRow] {
         // Before a new sensor's first reading there's nothing to miss.
         let start = max(window.start, (model.wearContext?.activatedAt ?? window.start).addingTimeInterval(3600))
-        guard start < now else { return [] }
-        let span = DateInterval(start: start, end: now)
-        let outages = sensor.signal.outages(in: span, now: now)
+        // After the sensor's end there's nothing to miss either.
+        let end = model.isDemo ? now : min(now, model.wearContext?.expiresAt ?? now)
+        guard start < end else { return [] }
+        let span = DateInterval(start: start, end: end)
+        let outages = sensor.signal.outages(in: span, now: end)
         var rows = outages.map { outage -> GapRow in
-            let interval = outage.interval(now: now)
+            let interval = outage.interval(now: end)
             let inside = recent.filter { interval.contains($0.timestamp) }
-            let filled = outage.end != nil && SignalStats.isCovered(interval, by: recent)
+            // Only the part inside the window can be judged: older readings aren't loaded here.
+            let judged = interval.intersection(with: span) ?? interval
+            let filled = outage.end != nil && SignalStats.isCovered(judged, by: recent)
             var reason: String
             switch outage.reason {
             case .bluetoothOff: reason = "Bluetooth was off on the phone"
@@ -211,7 +215,7 @@ struct SignalSections: View {
                 if inside.contains(where: { $0.source == .nfc }) {
                     reason += " · filled by an NFC scan"
                 } else if inside.contains(where: { $0.source == .backfill }) {
-                    reason += " · filled from the sensor's memory"
+                    reason += " · filled from the sensor's memory (a scan or the reconnect)"
                 }
             }
             return GapRow(start: interval.start, end: outage.end, reason: reason,
@@ -219,8 +223,8 @@ struct SignalSections: View {
         }
         // Stretches without data that no outage explains: the app wasn't running.
         for gap in SignalStats.dataGaps(in: recent, interval: span)
-        where !outages.contains(where: { $0.interval(now: now).intersects(gap) }) {
-            let ongoing = now.timeIntervalSince(gap.end) < 60
+        where !outages.contains(where: { $0.interval(now: end).intersects(gap) }) {
+            let ongoing = end == now && now.timeIntervalSince(gap.end) < 60
             rows.append(GapRow(start: gap.start, end: ongoing ? nil : gap.end,
                                reason: "No data received: the app may not have been running, or the phone was off",
                                state: ongoing ? .ongoing : .missing))

@@ -13,8 +13,12 @@ public struct BedtimeInputs: Sendable {
     public var isDemo = false
     public var runInBackground = true
     public var notificationsAllowed = true
+    /// Why alerts can't be seen or heard (notifications off, or only their sounds), when they can't.
+    public var notificationProblem: String?
     /// The no-data alert's delay, nil when it's off.
     public var missingDataMinutes: Int?
+    /// There is an all-day urgent-low alert (at or below 60 mg/dL).
+    public var hasAllDayUrgentLow = true
     /// An all-day urgent-low alert sounds through Silent mode and Focus.
     public var urgentLowSoundsThroughSilent = false
     public var sensorEndsAt: Date?
@@ -51,7 +55,8 @@ public struct BedtimeItem: Identifiable, Hashable, Sendable {
 
 public enum BedtimeCheck {
     /// The checks, the ones that need fixing first.
-    public static func items(_ input: BedtimeInputs, time: (Date) -> String) -> [BedtimeItem] {
+    public static func items(_ input: BedtimeInputs, calendar: Calendar = .autoupdatingCurrent,
+                             time: (Date) -> String) -> [BedtimeItem] {
         var items: [BedtimeItem] = []
 
         if let volume = input.mediaVolume {
@@ -93,8 +98,9 @@ public enum BedtimeCheck {
         }
 
         if !input.notificationsAllowed {
-            items.append(BedtimeItem(id: "notifications", status: .problem, title: "Notifications are off",
-                                     detail: "Alerts can't show or sound while the app is closed.", fix: .notificationSettings))
+            items.append(BedtimeItem(id: "notifications", status: .problem, title: "Alerts can't sound",
+                                     detail: input.notificationProblem ?? "Notifications are off for this app.",
+                                     fix: .notificationSettings))
         }
 
         if let minutes = input.missingDataMinutes {
@@ -104,10 +110,15 @@ public enum BedtimeCheck {
                                      detail: "You wouldn't hear it if readings stopped overnight.", fix: .missingDataAlert))
         }
 
-        items.append(input.urgentLowSoundsThroughSilent
-            ? BedtimeItem(id: "silent", status: .ok, title: "Urgent low sounds through Silent", detail: "", fix: .none)
-            : BedtimeItem(id: "silent", status: .warning, title: "Urgent low follows Silent mode",
-                          detail: "With the ring switch on silent, or in a Focus, it may not wake you.", fix: .urgentLowThroughSilent))
+        if !input.hasAllDayUrgentLow {
+            items.append(BedtimeItem(id: "silent", status: .warning, title: "No all-day urgent-low alert",
+                                     detail: "Add one under Alerts: a low at or below 60 mg/dL that sounds all day.", fix: .none))
+        } else {
+            items.append(input.urgentLowSoundsThroughSilent
+                ? BedtimeItem(id: "silent", status: .ok, title: "Urgent low sounds through Silent", detail: "", fix: .none)
+                : BedtimeItem(id: "silent", status: .warning, title: "Urgent low follows Silent mode",
+                              detail: "With the ring switch on silent, or in a Focus, it may not wake you.", fix: .urgentLowThroughSilent))
+        }
 
         if !input.isDemo, let end = input.sensorEndsAt {
             if end <= input.now {
@@ -126,9 +137,12 @@ public enum BedtimeCheck {
                 items.append(BedtimeItem(id: "build", status: .problem, title: "This app build expires at \(time(expiry))",
                                          detail: "Install the new build first: an expired app doesn't open or alert.", fix: .newBuild))
             } else {
-                let days = Int(expiry.timeIntervalSince(input.now) / 86_400)
-                items.append(BedtimeItem(id: "build", status: days < 2 ? .warning : .ok,
-                                         title: days < 1 ? "App build expires tomorrow" : "App build valid \(days) day\(days == 1 ? "" : "s")",
+                // Calendar days, so 01:00 with an expiry at 18:00 says "today", not "tomorrow".
+                let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: input.now),
+                                                   to: calendar.startOfDay(for: expiry)).day ?? 0
+                let title = days <= 0 ? "App build expires today at \(time(expiry))"
+                    : days == 1 ? "App build expires tomorrow" : "App build valid \(days) days"
+                items.append(BedtimeItem(id: "build", status: days < 2 ? .warning : .ok, title: title,
                                          detail: days < 2 ? "Install the new build soon." : "", fix: days < 2 ? .newBuild : .none))
             }
         }
@@ -145,13 +159,22 @@ public enum BedtimeCheck {
             ?? now.addingTimeInterval(9 * 3600)
     }
 
-    /// Whether `now` falls in the evening window that starts an hour before `bedtimeMinutes`
-    /// (minutes after midnight) and lasts until 4 AM.
-    public static func isEvening(_ now: Date, bedtimeMinutes: Int, calendar: Calendar = .autoupdatingCurrent) -> Bool {
-        let components = calendar.dateComponents([.hour, .minute], from: now)
+    /// The evening window `now` falls in, if any: from an hour before `bedtimeMinutes` (minutes
+    /// after midnight) until 4 AM, and at least 4 hours long, so a bedtime after midnight works too.
+    public static func eveningWindow(containing now: Date, bedtimeMinutes: Int,
+                                     calendar: Calendar = .autoupdatingCurrent) -> DateInterval? {
+        let components = calendar.dateComponents([.hour, .minute, .second], from: now)
         let minutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
-        let start = bedtimeMinutes - 60
-        return minutes >= start || minutes < 4 * 60
+        let start = ((bedtimeMinutes - 60) % 1440 + 1440) % 1440
+        let length = max((4 * 60 - start + 1440) % 1440, 4 * 60)
+        let sinceStart = (minutes - start + 1440) % 1440
+        guard sinceStart < length else { return nil }
+        let startDate = now.addingTimeInterval(-Double(sinceStart * 60 + (components.second ?? 0)))
+        return DateInterval(start: startDate, duration: Double(length) * 60)
+    }
+
+    public static func isEvening(_ now: Date, bedtimeMinutes: Int, calendar: Calendar = .autoupdatingCurrent) -> Bool {
+        eveningWindow(containing: now, bedtimeMinutes: bedtimeMinutes, calendar: calendar) != nil
     }
 }
 

@@ -95,6 +95,10 @@ final class SensorConnection {
     /// Bluetooth link quality and outages, for the Sensor screen's signal report.
     private(set) var signal = SignalStats()
     @ObservationIgnored private var signalSavedAt = Date.distantPast
+    /// The link delivered a packet since it last connected.
+    @ObservationIgnored private var linkDelivered = false
+    /// A link that had delivered dropped; the next connection is a reconnect.
+    @ObservationIgnored private var pendingReconnect = false
     /// A made-up sensor used in demo mode, so the inspector shows realistic bytes.
     private(set) var demoRecord: LibreSensorRecord?
     var allowUnverifiedTypes = false
@@ -160,7 +164,7 @@ final class SensorConnection {
     /// `pausing`: the app stops the connection to save battery while it's closed, which the
     /// signal report lists as the reason for the gap.
     func stop(pausing: Bool = false) {
-        if pausing, running, record != nil { signal.linkLost(at: Date(), reason: .appPaused) }
+        if pausing, running, record != nil, status != .ended { signal.linkLost(at: Date(), reason: .appPaused) }
         running = false
         expiryTimer?.invalidate()
         ble.stop()
@@ -197,6 +201,8 @@ final class SensorConnection {
         guard let record, Date() >= record.expiresAt else { return false }
         guard status != .ended else { return true }
         status = .ended
+        // A link that dropped just before the end won't come back: that's not an outage.
+        signal.endOpenOutage(at: min(Date(), record.expiresAt))
         history.markEnded(id: record.uid.hexString, at: min(Date(), record.expiresAt), reason: .expired)
         saveHistory()
         expiryTimer?.invalidate()
@@ -540,17 +546,29 @@ final class SensorConnection {
             if status != .connected { status = .connecting }
         case .connected(let id):
             log("Connected to \(id.uuidString.prefix(8))")
-            if record != nil { signal.recordReconnect(at: Date()) }
+            // A reconnect is a link that delivered packets coming back, not the first connection
+            // (or one to another sensor while searching).
+            if pendingReconnect {
+                pendingReconnect = false
+                signal.recordReconnect(at: Date())
+            }
         case .disconnected:
             // A sensor at the end of its life stops sending and drops the link.
             if endIfExpired(notify: true) { break }
             log("Disconnected, waiting to reconnect")
             if status == .connected { status = .connecting }
+            if linkDelivered {
+                linkDelivered = false
+                pendingReconnect = true
+            }
             if running, record != nil { signal.linkLost(at: Date(), reason: .linkLost) }
         case .packet(let packet, let id):
             handlePacket(packet, from: id)
         case .rssi(let value):
-            signal.recordRSSI(Double(value), at: Date())
+            // Only right after a packet from our sensor decoded, not another device's.
+            if let last = lastPacketAt, Date().timeIntervalSince(last) < 5 {
+                signal.recordRSSI(Double(value), at: Date())
+            }
         case .log(let message):
             log(message)
         }
@@ -627,15 +645,16 @@ final class SensorConnection {
             + record.glucoseReadings(from: parsed.trend, liveSource: .bluetooth)
         appendPacket(PacketRecord(date: Date(), encrypted: packet, decrypted: decrypted, packet: parsed, readings: readings,
                                   error: nil, isSimulated: false))
-        // The newest minute gave no reading although the sensor is past warm-up: an error flag or
-        // an impossible value.
-        let unusable = parsed.latest.map { latest in
-            latest.minuteIndex >= LibreSensorRecord.warmUpMinutes && !readings.contains { $0.minuteIndex == latest.minuteIndex }
-        } ?? false
+        // This minute gave no reading although the sensor is past warm-up: the parser drops a
+        // value of 0 (the sensor's error), so the slot is missing or produced nothing.
+        let unusable = parsed.ageMinutes >= LibreSensorRecord.warmUpMinutes
+            && !readings.contains { $0.minuteIndex == parsed.ageMinutes }
+        linkDelivered = true
         signal.recordPacket(at: Date(), unusable: unusable)
         saveSignal(force: false)
 
         if parsed.ageMinutes >= record.maxLifeMinutes {
+            signal.endOpenOutage(at: Date())
             status = .ended
             history.markEnded(id: record.uid.hexString, at: Date(), reason: .expired)
             saveHistory()

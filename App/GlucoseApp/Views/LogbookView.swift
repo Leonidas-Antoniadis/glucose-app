@@ -216,9 +216,14 @@ struct AddLogEntryView: View {
                         }
                         Toggle("Use to calibrate the sensor", isOn: $calibrate)
                         if !calibrate {
-                            LabeledContent("LibreLink showed") {
+                            LabeledContent("LibreLink showed (\(model.unit.symbol))") {
                                 TextField("optional", text: $libreLinkText)
                                     .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                            }
+                            if !libreLinkValid {
+                                Text("Type the value in \(model.unit.symbol), as LibreLink shows it.")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
                             }
                         }
                     case .note:
@@ -256,13 +261,18 @@ struct AddLogEntryView: View {
         Double(amountText.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
     }
 
+    /// Empty, or a value in range in the display unit.
+    private var libreLinkValid: Bool {
+        libreLinkText.trimmingCharacters(in: .whitespaces).isEmpty
+            || model.unit.parse(libreLinkText).map { (20...600).contains($0) } ?? false
+    }
+
     private var isValid: Bool {
         switch kind {
         case .fastInsulin, .slowInsulin: return (amount ?? 0) > 0 && (amount ?? 0) <= 100
         case .bloodGlucose:
-            let libreLinkValid = libreLinkText.trimmingCharacters(in: .whitespaces).isEmpty
-                || model.unit.parse(libreLinkText).map { (20...600).contains($0) } ?? false
-            return libreLinkValid && model.unit.parse(amountText).map { (20...600).contains($0) } ?? false
+            // The LibreLink field is hidden while calibrating, and then doesn't count.
+            return (calibrate || libreLinkValid) && model.unit.parse(amountText).map { (20...600).contains($0) } ?? false
         case .food: return amountText.isEmpty || (0...1000).contains(amount ?? -1)
         case .exercise, .note: return true
         }

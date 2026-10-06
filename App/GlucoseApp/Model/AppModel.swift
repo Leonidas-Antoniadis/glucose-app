@@ -192,6 +192,10 @@ final class AppModel {
         }
         activateSource()
         pruneOldData()
+        rescheduleBedtimeReminder()
+        // After iOS relaunched the app (say, for a Lock Screen button), the Live Activity shows
+        // the alert state as it is now instead of waiting for the next reading.
+        if let latest, Date().timeIntervalSince(latest.timestamp) < 3600 { updateSurfaces() }
     }
 
     /// Starts the chosen data source. `resetEngine` is for a change of data source: alerts from
@@ -383,8 +387,7 @@ final class AppModel {
             notifications.clearDeliveredMissingData()
         }
         updateSurfaces()
-        // With the app open the Home card shows the bedtime check instead.
-        if !isActive { notifyBedtimeProblemsIfNeeded() }
+        bedtimeCheckpoint(isActive: isActive)
     }
 
     /// Pushes the newest reading to the widgets and the Live Activity.
@@ -400,21 +403,16 @@ final class AppModel {
         var extras = LiveActivityExtras()
         extras.points = Array(ReadingPipeline.sparkline(readings(lastHours: 1)).map(\.mgdL).suffix(13))
         extras.change15 = AlertMessage.change(in: readings(lastHours: 0.5))
-        // The newest threshold alert that is still sounding (a trend alert has no "since").
-        let ruleIDs = Set(settings.ruleSet.rules.map(\.id))
-        if let event = recentEvents.first(where: { ruleIDs.contains($0.ruleID) && engine.isFiring($0.ruleID) }) {
-            let state = engine.states[event.ruleID]
-            extras.alert = ActivityAlert(name: event.ruleName, ruleID: event.ruleID.uuidString, isLow: event.direction == .low,
-                                         since: state?.crossedSince ?? event.date,
-                                         snoozedUntil: state?.snoozedUntil.flatMap { $0 > Date() ? $0 : nil })
-        }
-        let dayAgo = Date().addingTimeInterval(-24 * 3600)
-        if let fast = QuickLog.lastInsulin(.rapid, in: logbook), fast.date > dayAgo {
-            extras.lastFastUnits = fast.units
-            extras.lastFastAt = fast.date
-        }
-        if let meal = QuickLog.lastMeal(in: logbook), meal > dayAgo {
-            extras.lastFoodAt = meal
+        // The most severe threshold rule still sounding, lows first, read from the alert engine
+        // (saved across relaunches) rather than the in-memory list of recent alerts. A trend
+        // alert has no "since", so it doesn't get the banner.
+        let sounding = settings.ruleSet.rules
+            .filter { $0.isEnabled && engine.isFiring($0.id) }
+            .sorted { $0.direction != $1.direction ? $0.direction == .low : $0.isMoreSevere(than: $1) }
+        if let rule = sounding.first, let state = engine.states[rule.id] {
+            extras.alert = ActivityAlert(name: rule.name, ruleID: rule.id.uuidString, isLow: rule.direction == .low,
+                                         since: state.crossedSince ?? state.firedAt ?? Date(),
+                                         snoozedUntil: state.snoozedUntil.flatMap { $0 > Date() ? $0 : nil })
         }
         return extras
     }
@@ -428,14 +426,22 @@ final class AppModel {
             body: AlertMessage.body(for: event, unit: unit, change15: AlertMessage.change(in: readings(lastHours: 0.5)),
                                     thresholdMgdL: rule?.thresholdMgdL, since: since,
                                     time: { $0.formatted(date: .omitted, time: .shortened) }),
-            chartURL: AlertChartRenderer.render(readings: readings(lastHours: 2), unit: unit, threshold: rule?.thresholdMgdL))
+            // With the Face ID lock on, the Lock Screen gets no chart of the last hours.
+            chartURL: settings.biometricLock ? nil
+                : AlertChartRenderer.render(readings: readings(lastHours: 2), unit: unit, threshold: rule?.thresholdMgdL))
     }
+
+    static let treatingNote = "Treating a low"
 
     /// Snooze or Treating from a notification or the Live Activity. Treating also logs it, so
     /// the logbook shows when the low was treated.
     func handleLockScreenAction(_ action: AlertIntentAction, ruleID: UUID, eventDate: Date? = nil) {
-        if action == .treating {
-            addLogEntry(LogEntry(date: Date(), kind: .meal(carbsGrams: nil), text: "Treating a low"))
+        // Once per few minutes: Treating tapped on the notification and on the card is one treatment.
+        let recentlyLogged = logbook.contains {
+            $0.text == Self.treatingNote && Date().timeIntervalSince($0.date) < 10 * 60
+        }
+        if action == .treating, !recentlyLogged {
+            addLogEntry(LogEntry(date: Date(), kind: .meal(carbsGrams: nil), text: Self.treatingNote))
         }
         acknowledge(ruleID: ruleID, eventDate: eventDate)
     }
@@ -562,7 +568,7 @@ final class AppModel {
     /// Test alerts play the alarm for 8 seconds; real ones for 30.
     private func sendTest(_ event: AlertEvent) {
         let alarmPlaying = playAlarmIfNeeded(event, seconds: 8)
-        notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying && AlarmPlayer.isClearlyAudible)
+        notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying && AlarmPlayer.isClearlyAudible, isTest: true)
     }
 
     func stopAlarm() {
@@ -681,6 +687,10 @@ final class AppModel {
         }
         sensor.allowUnverifiedTypes = settings.allowUnverifiedSensorTypes
         sensor.recordAllRawData = settings.recordAllRawData
+        if old.bedtimeCheck != settings.bedtimeCheck || old.bedtimeMinutes != settings.bedtimeMinutes
+            || old.dataSource != settings.dataSource {
+            rescheduleBedtimeReminder()
+        }
         if old.dataSource != settings.dataSource || old.demoSpeed != settings.demoSpeed {
             activateSource(resetEngine: true)
         }
@@ -751,7 +761,7 @@ final class AppModel {
         }
         fingersticks.append(FingerstickEntry(date: date, mgdL: mgdL, usedForCalibration: pointID != nil,
                                              sensorSerial: sensor.record?.serial, calibrationPointID: pointID,
-                                             libreLinkMgdL: libreLinkMgdL))
+                                             libreLinkMgdL: libreLinkMgdL, offeredForCalibration: calibrate))
         fingersticks.sort { $0.date > $1.date }
         try? stores.fingersticks.save(fingersticks)
         return message
@@ -828,7 +838,7 @@ final class AppModel {
     /// readings in memory. Older readings come from the archive, off the main thread.
     func fullAccuracyReport() async -> AccuracyReport {
         guard !isDemo || ScreenshotMode.isActive else { return AccuracyReport(pairs: []) }
-        let sticks = fingersticks.filter { !$0.usedForCalibration }
+        let sticks = fingersticks.filter { !$0.usedForCalibration && $0.offeredForCalibration != true }
         let inMemory = readings
         guard let oldest = sticks.map(\.date).min() else { return AccuracyReport(pairs: []) }
         let archive = stores.archive
@@ -851,8 +861,8 @@ final class AppModel {
         var lifetimeDays: Int
         /// The sensor minute at `activatedAt`: 0, except for the demo's endless sensor.
         var firstMinute: Int
-
-        var expiresAt: Date { activatedAt.addingTimeInterval(Double(lifetimeDays) * 86_400) }
+        /// The exact end, as the Status section shows it (the strip uses whole days).
+        var expiresAt: Date
         func day(at date: Date) -> Int { Int(date.timeIntervalSince(activatedAt) / 86_400) + 1 }
     }
 
@@ -863,20 +873,24 @@ final class AppModel {
             let first = max(0, latest.minuteIndex - 8 * 1440 - 600)
             return WearContext(serial: latest.sensorSerial,
                                activatedAt: latest.timestamp.addingTimeInterval(-Double(latest.minuteIndex - first) * 60),
-                               lifetimeDays: 15, firstMinute: first)
+                               lifetimeDays: 15, firstMinute: first,
+                               expiresAt: latest.timestamp.addingTimeInterval(-Double(latest.minuteIndex - first) * 60 + 15 * 86_400))
         }
         guard let record = sensor.record else { return nil }
         return WearContext(serial: record.serial, activatedAt: record.activatedAt,
-                           lifetimeDays: Int((Double(record.maxLifeMinutes) / 1440).rounded(.up)), firstMinute: 0)
+                           lifetimeDays: Int((Double(record.maxLifeMinutes) / 1440).rounded(.up)), firstMinute: 0,
+                           expiresAt: record.expiresAt)
     }
 
     /// Coverage, calibrations and accuracy for each day of the current sensor's wear. Days older
     /// than the readings in memory come from the archive, off the main thread.
     func wearDays() async -> [SensorWearDay] {
         guard let context = wearContext else { return [] }
-        let accuracy = await fullAccuracyReport()
         let inMemory = readings
-        let sticks = fingersticks
+        let sticks = fingersticks.filter { $0.date >= context.activatedAt }
+        // Accuracy per day comes from this sensor's checks only, so nothing older than the sensor
+        // is loaded (not the whole 91-day archive).
+        let scoresChecks = !isDemo || ScreenshotMode.isActive
         let archive = isDemo ? nil : stores.archive
         let needsArchive = context.activatedAt < (inMemory.first?.timestamp ?? .distantFuture)
         return await Task.detached(priority: .userInitiated) {
@@ -886,6 +900,7 @@ final class AppModel {
                 let older = (try? archive.load(from: context.activatedAt, to: first)) ?? []
                 all = older.filter { $0.timestamp < first } + inMemory
             }
+            let accuracy = scoresChecks ? AccuracyReport(fingersticks: sticks, readings: all) : AccuracyReport(pairs: [])
             return SensorWear.days(readings: all, sensorSerial: context.serial, activatedAt: context.activatedAt,
                                    lifetimeDays: context.lifetimeDays, fingersticks: sticks, accuracy: accuracy,
                                    now: max(Date(), inMemory.last?.timestamp ?? Date()), firstMinute: context.firstMinute)
@@ -1079,6 +1094,7 @@ final class AppModel {
         // about the app build expiring come back.
         notifications.removeAll()
         notifications.scheduleSignatureReminders(expiry: signatureExpiry)
+        rescheduleBedtimeReminder()
         activateSource(resetEngine: true)
     }
 }

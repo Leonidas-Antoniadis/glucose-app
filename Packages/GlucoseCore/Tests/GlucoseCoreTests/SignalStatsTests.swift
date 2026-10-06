@@ -124,4 +124,25 @@ final class SignalStatsTests: XCTestCase {
         XCTAssertEqual(days[0].coverage ?? 0, 1, accuracy: 0.001)
         XCTAssertTrue(days[1].isToday)
     }
+
+    func testPacketShareNeverPassesOneHundredPercent() {
+        var stats = SignalStats()
+        for minute in 0..<120 { stats.recordPacket(at: at(Double(minute)), unusable: false) }
+        // Half past: the first hour is counted whole, and so are its expected minutes.
+        let summary = stats.summary(in: DateInterval(start: at(30), end: at(120)))
+        XCTAssertEqual(summary.packets, 120)
+        XCTAssertEqual(summary.minutes, 120, accuracy: 0.001)
+        XCTAssertEqual(summary.packetShare ?? 0, 1, accuracy: 0.001)
+    }
+
+    func testEndingAnOutageAndKeepingItsFirstReason() {
+        var stats = SignalStats()
+        stats.linkLost(at: at(0), reason: .bluetoothOff)
+        stats.linkLost(at: at(5), reason: .appPaused)
+        XCTAssertEqual(stats.outages.last?.reason, .bluetoothOff)
+        stats.endOpenOutage(at: at(30))
+        XCTAssertEqual(stats.outages.last?.end, at(30))
+        stats.recordPacket(at: at(40), unusable: false)
+        XCTAssertEqual(stats.outages.last?.end, at(30), "a closed outage stays as it was")
+    }
 }

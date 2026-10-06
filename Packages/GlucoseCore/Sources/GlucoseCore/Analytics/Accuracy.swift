@@ -88,7 +88,8 @@ public struct AccuracyReport: Hashable, Sendable {
                 includeCalibrationPoints: Bool = false) {
         let sorted = readings.sorted { $0.timestamp < $1.timestamp }
         let pairs = fingersticks
-            .filter { includeCalibrationPoints || !$0.usedForCalibration }
+            // A stick offered for calibration isn't an independent check, even one refused.
+            .filter { includeCalibrationPoints || (!$0.usedForCalibration && $0.offeredForCalibration != true) }
             .compactMap { stick -> Pair? in
                 guard let index = Self.closestIndex(to: stick.date, in: sorted) else { return nil }
                 let closest = sorted[index]

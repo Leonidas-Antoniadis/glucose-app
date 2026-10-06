@@ -101,4 +101,13 @@ final class AccuracyTests: XCTestCase {
         XCTAssertEqual(lines.count, 3)
         XCTAssertTrue(lines[1].hasSuffix(",100,110,104,10,10.0,A,5,0.00"), String(lines[1]))
     }
+
+    func testSticksOfferedForCalibrationAreNotChecks() {
+        let readings = (0..<20).map { TestSupport.reading(100, minute: $0) }
+        let refused = FingerstickEntry(date: readings[5].timestamp, mgdL: 150, usedForCalibration: false, offeredForCalibration: true)
+        let check = FingerstickEntry(date: readings[10].timestamp, mgdL: 104, usedForCalibration: false)
+        let report = AccuracyReport(fingersticks: [refused, check], readings: readings)
+        XCTAssertEqual(report.pairs.count, 1, "a stick refused as a likely test error isn't scored")
+        XCTAssertEqual(report.pairs.first?.referenceMgdL, 104)
+    }
 }

@@ -57,7 +57,8 @@ struct SensorView: View {
                     Label("Start a new sensor (NFC)", systemImage: "play.circle")
                 }
                 .disabled(sensor.isBusy)
-                if sensor.record != nil {
+                // In the demo a scan would mix the real sensor's history into the simulated readings.
+                if sensor.record != nil, !model.isDemo {
                     Button {
                         Task { await sensor.scanHistory() }
                     } label: {

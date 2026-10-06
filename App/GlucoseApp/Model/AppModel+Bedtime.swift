@@ -7,7 +7,7 @@ import GlucoseCore
 extension AppModel {
     func bedtimeInputs(now: Date = Date()) -> BedtimeInputs {
         var input = BedtimeInputs(now: now, morning: BedtimeCheck.morning(after: now))
-        input.mediaVolume = Double(AVAudioSession.sharedInstance().outputVolume)
+        input.mediaVolume = Self.freshMediaVolume()
         let device = UIDevice.current
         input.batteryLevel = device.batteryLevel >= 0 ? Double(device.batteryLevel) : nil
         input.isCharging = device.batteryState == .charging || device.batteryState == .full
@@ -16,8 +16,10 @@ extension AppModel {
         input.isDemo = isDemo
         input.runInBackground = settings.runInBackground
         input.notificationsAllowed = notificationProblem == nil
+        input.notificationProblem = notificationProblem
         input.missingDataMinutes = settings.missingData.isEnabled ? settings.missingData.minutes : nil
-        input.urgentLowSoundsThroughSilent = settings.ruleSet.urgentLowRules.contains { $0.isCritical }
+        input.hasAllDayUrgentLow = !settings.ruleSet.urgentLowRules.isEmpty
+        input.urgentLowSoundsThroughSilent = settings.ruleSet.urgentLowRules.contains { $0.isCritical && $0.sound != .silent }
         input.sensorEndsAt = sensor.record?.expiresAt
         input.buildExpiresAt = signatureExpiry
         return input
@@ -55,42 +57,74 @@ extension AppModel {
         return parts
     }
 
+    /// The media volume, 0...1. `outputVolume` can be stale while the app's audio session is
+    /// inactive, so with nothing playing a session that mixes with other audio (it doesn't stop
+    /// music) is activated first.
+    static func freshMediaVolume() -> Double {
+        let session = AVAudioSession.sharedInstance()
+        if !AlarmPlayer.isActive, SoundPreviewPlayer.shared.playing == nil {
+            try? session.setCategory(.ambient, options: [.mixWithOthers])
+            try? session.setActive(true)
+        }
+        return Double(session.outputVolume)
+    }
+
     // MARK: When to show it
 
     private static let dismissedKey = "bedtimeDismissedNight"
     private static let notifiedKey = "bedtimeNotifiedNight"
 
-    /// The night a time belongs to: until 4 AM it's still the evening before.
-    static func nightKey(_ date: Date) -> String {
+    /// The night a time belongs to: the day its evening window started, so a bedtime after
+    /// midnight and a Done tapped at 01:00 still count for the same night.
+    func nightKey(_ date: Date) -> String {
+        let window = BedtimeCheck.eveningWindow(containing: date, bedtimeMinutes: settings.bedtimeMinutes)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date.addingTimeInterval(-4 * 3600))
+        return formatter.string(from: window?.start ?? date)
     }
 
-    /// From an hour before bedtime until 4 AM, unless dismissed for tonight.
+    /// From an hour before bedtime until 4 AM (or 4 hours for a late bedtime), unless dismissed
+    /// for tonight.
     func showsBedtimeCard(at now: Date) -> Bool {
         settings.bedtimeCheck
             && BedtimeCheck.isEvening(now, bedtimeMinutes: settings.bedtimeMinutes)
-            && UserDefaults.standard.string(forKey: Self.dismissedKey) != Self.nightKey(now)
+            && UserDefaults.standard.string(forKey: Self.dismissedKey) != nightKey(now)
     }
 
     func dismissBedtimeCard(at now: Date = Date()) {
-        UserDefaults.standard.set(Self.nightKey(now), forKey: Self.dismissedKey)
+        UserDefaults.standard.set(nightKey(now), forKey: Self.dismissedKey)
     }
 
-    /// At bedtime, with the app closed, a notification lists what needs fixing. Nothing is sent
-    /// when all is well. Once a night, within two hours after bedtime.
-    func notifyBedtimeProblemsIfNeeded(now: Date = Date()) {
+    /// Schedules tonight's (or tomorrow's) bedtime reminder. It fires only if no check runs
+    /// before it: no readings arriving is exactly what the check can't see from inside the app.
+    func rescheduleBedtimeReminder(after date: Date = Date()) {
+        guard settings.bedtimeCheck, !isDemo, settings.dataSource == .libre else {
+            notifications.cancelBedtimeReminder()
+            return
+        }
+        let parts = DateComponents(hour: settings.bedtimeMinutes / 60, minute: settings.bedtimeMinutes % 60)
+        guard let next = Calendar.autoupdatingCurrent.nextDate(after: date, matching: parts, matchingPolicy: .nextTime) else { return }
+        notifications.scheduleBedtimeReminder(at: next)
+    }
+
+    /// Called with each new reading. From 15 minutes before bedtime until 2 hours after, the app
+    /// can check for itself: the scheduled reminder moves to tomorrow, and with the app closed a
+    /// notification lists what needs fixing (nothing is sent when all is well). With the app open
+    /// the Home card shows the same.
+    func bedtimeCheckpoint(isActive: Bool, now: Date = Date()) {
         guard settings.bedtimeCheck, !isDemo else { return }
         let components = Calendar.autoupdatingCurrent.dateComponents([.hour, .minute], from: now)
         let minutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
-        guard (minutes - settings.bedtimeMinutes + 1440) % 1440 < 120 else { return }
-        let night = Self.nightKey(now)
+        guard (minutes - (settings.bedtimeMinutes - 15) + 2 * 1440) % 1440 < 135 else { return }
+        // Tonight is covered: the reminder moves past tonight's bedtime.
+        rescheduleBedtimeReminder(after: now.addingTimeInterval(3 * 3600))
+        guard !isActive else { return }
+        let night = nightKey(now)
         guard UserDefaults.standard.string(forKey: Self.notifiedKey) != night,
               UserDefaults.standard.string(forKey: Self.dismissedKey) != night else { return }
-        UserDefaults.standard.set(night, forKey: Self.notifiedKey)
         let problems = bedtimeItems(now: now).filter { $0.status == .problem }
         guard !problems.isEmpty else { return }
+        UserDefaults.standard.set(night, forKey: Self.notifiedKey)
         notifications.post(title: "Before you sleep",
                            body: problems.map(\.title).joined(separator: " · ") + ". Open Glucose to fix it.")
     }

@@ -17,7 +17,41 @@ final class BedtimeTests: XCTestCase {
     }
 
     private func check(_ input: BedtimeInputs) -> [BedtimeItem] {
-        BedtimeCheck.items(input, time: { _ in "3:10 AM" })
+        BedtimeCheck.items(input, calendar: utc, time: { _ in "3:10 AM" })
+    }
+
+    func testLateBedtimeWindow() {
+        func at(_ hour: Int, _ minute: Int) -> Date {
+            utc.date(bySettingHour: hour, minute: minute, second: 0, of: noon)!
+        }
+        // Bedtime 00:30: from 23:30 to 04:00, never all day.
+        XCTAssertFalse(BedtimeCheck.isEvening(at(10, 0), bedtimeMinutes: 30, calendar: utc))
+        XCTAssertFalse(BedtimeCheck.isEvening(at(23, 29), bedtimeMinutes: 30, calendar: utc))
+        XCTAssertTrue(BedtimeCheck.isEvening(at(23, 30), bedtimeMinutes: 30, calendar: utc))
+        XCTAssertTrue(BedtimeCheck.isEvening(at(3, 59), bedtimeMinutes: 30, calendar: utc))
+        XCTAssertFalse(BedtimeCheck.isEvening(at(4, 0), bedtimeMinutes: 30, calendar: utc))
+        // Bedtime 05:00: at least 4 hours from 04:00, so until 08:00.
+        XCTAssertTrue(BedtimeCheck.isEvening(at(7, 59), bedtimeMinutes: 5 * 60, calendar: utc))
+        XCTAssertFalse(BedtimeCheck.isEvening(at(8, 0), bedtimeMinutes: 5 * 60, calendar: utc))
+        XCTAssertFalse(BedtimeCheck.isEvening(at(12, 0), bedtimeMinutes: 5 * 60, calendar: utc))
+        // The window started the evening before: 01:00 belongs to the night that began at 23:30.
+        let window = BedtimeCheck.eveningWindow(containing: at(1, 0), bedtimeMinutes: 30, calendar: utc)
+        XCTAssertEqual(window?.start, at(1, 0).addingTimeInterval(-90 * 60))
+    }
+
+    func testWordingForNotificationsUrgentLowAndBuild() {
+        var input = input()
+        input.notificationsAllowed = false
+        input.notificationProblem = "Notification sounds are off for this app, so alerts are silent."
+        input.hasAllDayUrgentLow = false
+        input.now = utc.date(bySettingHour: 1, minute: 0, second: 0, of: noon)!
+        input.morning = utc.date(bySettingHour: 7, minute: 0, second: 0, of: noon)!
+        input.buildExpiresAt = utc.date(bySettingHour: 18, minute: 0, second: 0, of: noon)!
+        let items = check(input)
+        XCTAssertEqual(items.first { $0.id == "notifications" }?.detail, input.notificationProblem)
+        XCTAssertEqual(items.first { $0.id == "silent" }?.title, "No all-day urgent-low alert")
+        XCTAssertEqual(items.first { $0.id == "build" }?.title, "App build expires today at 3:10 AM",
+                       "the same calendar day, not tomorrow")
     }
 
     func testAllClear() {

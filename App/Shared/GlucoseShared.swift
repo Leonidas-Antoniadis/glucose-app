@@ -144,16 +144,14 @@ struct GlucoseActivityAttributes: ActivityAttributes {
         var points: [Double]? = nil
         /// Change over the last 15 minutes, in mg/dL.
         var change15: Double? = nil
-        var lastFastUnits: Double? = nil
-        var lastFastAt: Date? = nil
-        var lastFoodAt: Date? = nil
 
         var formattedValue: String { GlucoseShared.format(mgdL: mgdL, unitRaw: unitRaw) }
 
         /// "−9", "+0.5" or "±0" in the display unit.
         var formattedChange: String? {
             guard let change15 else { return nil }
-            let size = GlucoseShared.format(mgdL: abs(change15), unitRaw: unitRaw)
+            // Not `format`: that turns anything at or below 39 into "LO", and a change is small.
+            let size = unitRaw == "mmolL" ? String(format: "%.1f", abs(change15) / 18.016) : String(Int(abs(change15).rounded()))
             if Double(size) == 0 { return "±0" }
             return (change15 < 0 ? "−" : "+") + size
         }

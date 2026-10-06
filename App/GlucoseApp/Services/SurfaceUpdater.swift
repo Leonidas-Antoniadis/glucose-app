@@ -3,15 +3,11 @@ import ActivityKit
 import WidgetKit
 import GlucoseCore
 
-/// What the Live Activity shows besides the value: a sounding alert, the last hour and the
-/// last dose and meal.
+/// What the Live Activity shows besides the value: a sounding alert and the last hour.
 struct LiveActivityExtras: Equatable {
     var alert: ActivityAlert?
     var points: [Double]?
     var change15: Double?
-    var lastFastUnits: Double?
-    var lastFastAt: Date?
-    var lastFoodAt: Date?
 }
 
 /// Keeps the home-screen widgets and the lock-screen Live Activity current.
@@ -54,8 +50,7 @@ final class SurfaceUpdater {
                        extras: LiveActivityExtras) -> GlucoseActivityAttributes.ContentState {
         GlucoseActivityAttributes.ContentState(
             mgdL: latest.mgdL, arrow: arrow.symbol, timestamp: latest.timestamp, unitRaw: unit.rawValue, isDemo: isDemo,
-            alert: extras.alert, points: extras.points, change15: extras.change15,
-            lastFastUnits: extras.lastFastUnits, lastFastAt: extras.lastFastAt, lastFoodAt: extras.lastFoodAt)
+            alert: extras.alert, points: extras.points, change15: extras.change15)
     }
 
     private func content(_ state: GlucoseActivityAttributes.ContentState) -> ActivityContent<GlucoseActivityAttributes.ContentState> {

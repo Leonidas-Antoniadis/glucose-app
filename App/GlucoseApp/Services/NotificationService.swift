@@ -78,17 +78,33 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
 
     /// `alarmPlaying`: the app is already playing the sound itself, loud enough to hear, so the
     /// notification stays quiet.
-    func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false, details: AlertDetails? = nil) {
+    /// `isTest`: a test alert gets no Snooze or Treating, so tapping them can't snooze the real
+    /// rule or log a treatment.
+    func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false, details: AlertDetails? = nil,
+                 isTest: Bool = false) {
         let content = content(for: event, unit: unit, alarmPlaying: alarmPlaying)
+        if isTest {
+            content.categoryIdentifier = ""
+            content.userInfo = [:]
+        }
+        var chartFile: URL?
         if let details {
             content.title = details.title
             content.body = details.body
-            if let url = details.chartURL,
-               let chart = try? UNNotificationAttachment(identifier: "chart", url: url, options: nil) {
-                content.attachments = [chart]
+            if let url = details.chartURL {
+                if let chart = try? UNNotificationAttachment(identifier: "chart", url: url, options: nil) {
+                    content.attachments = [chart]
+                    chartFile = url
+                } else {
+                    try? FileManager.default.removeItem(at: url)
+                }
             }
         }
-        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        let attached = chartFile
+        center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
+            // iOS takes the chart file only when the notification is added.
+            if error != nil, let attached { try? FileManager.default.removeItem(at: attached) }
+        }
     }
 
     /// Demo only: the alerts the simulated sensor will raise while iOS keeps the app suspended.
@@ -137,6 +153,25 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         content.sound = SoundCatalog.notificationSound(for: sound, critical: false, volume: 1)
         content.interruptionLevel = .timeSensitive
         center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+    }
+
+    private static let bedtimeID = "bedtime-check"
+
+    /// The bedtime reminder, scheduled ahead so it fires even if no reading arrives tonight (with
+    /// Bluetooth off or the app closed, the app can't check anything itself). A check the app
+    /// runs before bedtime replaces it.
+    func scheduleBedtimeReminder(at date: Date) {
+        cancelBedtimeReminder()
+        let content = UNMutableNotificationContent()
+        content.title = "Bedtime check"
+        content.body = "Glucose couldn't check tonight's alarms: no recent reading. Open the app to make sure they'll sound."
+        content.sound = SoundCatalog.notificationSound(for: .tune(name: "chime"), critical: false, volume: 1)
+        content.interruptionLevel = .timeSensitive
+        schedule(id: Self.bedtimeID, content: content, at: date)
+    }
+
+    func cancelBedtimeReminder() {
+        center.removePendingNotificationRequests(withIdentifiers: [Self.bedtimeID])
     }
 
     private static var missingDataIDs: [String] {
@@ -243,11 +278,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         if let idString = response.notification.request.content.userInfo["ruleID"] as? String,
            let id = UUID(uuidString: idString) {
             let sentAt = response.notification.date
-            switch response.actionIdentifier {
-            case Self.snoozeAction: Task { @MainActor in self.onSnooze?(id, sentAt) }
-            case Self.treatingAction: Task { @MainActor in self.onTreating?(id, sentAt) }
-            default: break
+            let action = response.actionIdentifier
+            // Done only once the snooze is saved, or iOS may suspend the app first.
+            Task { @MainActor in
+                switch action {
+                case Self.snoozeAction: self.onSnooze?(id, sentAt)
+                case Self.treatingAction: self.onTreating?(id, sentAt)
+                default: break
+                }
+                completionHandler()
             }
+            return
         }
         completionHandler()
     }

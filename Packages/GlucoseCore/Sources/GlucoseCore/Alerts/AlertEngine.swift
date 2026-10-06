@@ -313,6 +313,12 @@ public struct AlertEngine: Sendable {
     /// state for the rule at all (the app was relaunched since), a recent alert is snoozed anyway.
     @discardableResult
     public mutating func acknowledge(ruleID: UUID, at date: Date, eventDate: Date? = nil) -> Bool {
+        // No reading for longer than an episode lasts: whatever was sounding is over, and a snooze
+        // now (from a Lock Screen card frozen since then) would carry into the next low.
+        if let last = lastProcessedAt, date.timeIntervalSince(last) > Self.gapResetMinutes * 60 {
+            record(date, "ignored snooze: no reading for \(Int(date.timeIntervalSince(last) / 60)) min")
+            return false
+        }
         if let rule = ruleSet.rules.first(where: { $0.id == ruleID }) {
             if isFiring(ruleID) {
                 for other in ruleSet.rules(for: rule.direction) where other.isEnabled && isFiring(other.id) {
