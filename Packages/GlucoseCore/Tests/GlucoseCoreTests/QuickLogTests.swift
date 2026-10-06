@@ -52,4 +52,11 @@ final class QuickLogTests: XCTestCase {
         XCTAssertEqual(QuickLog.usualDoses(.rapid, in: entries, now: now), [4])
         XCTAssertEqual(QuickLog.usualDoses(.rapid, in: [], now: now), [])
     }
+
+    func testFormatDoesNotTrapOnHugeAmounts() {
+        XCTAssertEqual(LogEntry.format(12), "12")
+        XCTAssertEqual(LogEntry.format(1.5), "1.5")
+        XCTAssertFalse(LogEntry.format(1e20).isEmpty, "a 21-digit amount typed by mistake doesn't crash")
+        XCTAssertFalse(LogEntry.format(.infinity).isEmpty)
+    }
 }

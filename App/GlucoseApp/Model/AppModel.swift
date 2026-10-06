@@ -58,10 +58,17 @@ final class AppModel {
         }
         self.settings = settings
         self.savedSettings = settings
+        // Locked from the first frame: start() asks for notifications before Face ID.
+        self.isLocked = settings.biometricLock
         self.engine = AlertEngine(ruleSet: settings.ruleSet)
+        engine.unit = settings.unit
         // Snoozes, repeats and the decision log survive iOS relaunching the app.
         if settings.dataSource == .libre, !ScreenshotMode.isActive, let saved = stores.alertState.load() {
             engine.restore(saved, now: Date())
+        }
+        // The log has its own file, written in the demo too, so it also survives a change of source.
+        if !ScreenshotMode.isActive, let lines = stores.decisionLog.load() {
+            engine.restoreLog(lines)
         }
         let now = Date()
         self.demoSensor = SimulatedSensor(startedAt: Date(timeIntervalSince1970: (now.timeIntervalSince1970 / 60).rounded(.down) * 60 - 15 * 86_400))
@@ -93,6 +100,7 @@ final class AppModel {
     private func syncDecisionLog() {
         guard engine.log.count != decisionLog.count || engine.log.last != decisionLog.first else { return }
         decisionLog = engine.log.reversed()
+        if !ScreenshotMode.isActive { try? stores.decisionLog.save(engine.log) }
     }
     var isDemo: Bool { settings.dataSource == .demo }
 
@@ -146,11 +154,14 @@ final class AppModel {
         readings.filter { interval.contains($0.timestamp) }
     }
 
-    /// Readings beyond the 14 days held in memory come from the archive.
-    func archivedReadings(in interval: DateInterval) -> [GlucoseReading] {
-        guard !isDemo, let archive = stores.archive,
-              interval.start < Date().addingTimeInterval(-Self.memoryDays * 86_400) else { return readings(in: interval) }
-        return (try? archive.load(from: interval.start, to: interval.end)) ?? []
+    /// Readings for a report. A period inside the readings held in memory uses those; a longer
+    /// one decodes the archive off the main thread (90 days is about 130,000 lines).
+    func reportReadings(in interval: DateInterval) async -> [GlucoseReading] {
+        let inMemory = readings.first.map { interval.start >= $0.timestamp } ?? false
+        guard !isDemo, !inMemory, let archive = stores.archive else { return readings(in: interval) }
+        return await Task.detached(priority: .userInitiated) {
+            (try? archive.load(from: interval.start, to: interval.end)) ?? []
+        }.value
     }
 
     // MARK: Startup
@@ -158,6 +169,12 @@ final class AppModel {
     func start() async {
         guard !started else { return }
         started = true
+        // A background launch (iOS relaunching the app for Bluetooth) must not count as the app
+        // being open: that would skip stopping the alarm, Face ID and the status refresh later.
+        // (During a normal launch the state can still be .inactive, which counts as open.)
+        isActive = UIApplication.shared.applicationState != .background
+        // Reports, backups and captures shared earlier aren't needed any more.
+        AppStores.clearExports()
         if !ScreenshotMode.isActive {
             await notifications.requestAuthorization()
             await refreshNotificationStatus()
@@ -167,7 +184,8 @@ final class AppModel {
         startBatteryMonitoring()
         if settings.biometricLock {
             isLocked = true
-            await unlock()
+            // In the background Face ID can't be shown; opening the app asks for it.
+            if isActive { await unlock() }
         }
         activateSource()
         pruneOldData()
@@ -180,7 +198,12 @@ final class AppModel {
         demoTask?.cancel()
         notifications.cancelDemoAlerts()
         if resetEngine {
+            // A fresh alert memory, but the decision log carries on.
+            let log = engine.log
             engine = AlertEngine(ruleSet: settings.ruleSet)
+            engine.unit = unit
+            engine.restoreLog(log)
+            engine.note("alert memory reset, source: \(settings.dataSource.title)", at: Date())
             stores.alertState.delete()
             recentEvents = []
             alarm.stop()
@@ -332,6 +355,11 @@ final class AppModel {
             // A demo in the background already has its alerts scheduled (see scheduleDemoAlertsAhead).
             deliver(events, notify: !(demoRunsAhead && !isActive))
             saveAlertState(force: !events.isEmpty || before.0 != engine.states || before.1 != engine.trendStates)
+        } else {
+            let minutes = Int(Date().timeIntervalSince(latest.timestamp) / 60)
+            engine.note("no alert check: the newest reading arrived \(minutes) min late "
+                        + "(\(unit.formatReading(mgdL: latest.mgdL, includeSymbol: true)))", at: Date())
+            syncDecisionLog()
         }
         // In the background the demo stops when iOS suspends the app, which isn't missing data.
         if !isDemo || (settings.demoSpeed == .realTime && isActive) {
@@ -576,6 +604,7 @@ final class AppModel {
         if old.ruleSet != settings.ruleSet {
             engine.ruleSet = settings.ruleSet
         }
+        engine.unit = settings.unit
         // The queued "No glucose data" alerts follow the new settings right away, also while no
         // reading arrives to reschedule them (which is exactly when they fire).
         if old.missingData != settings.missingData, settings.dataSource == old.dataSource {
@@ -792,7 +821,11 @@ final class AppModel {
             }
         case .background:
             isActive = false
-            if settings.biometricLock { isLocked = true }
+            if settings.biometricLock {
+                isLocked = true
+                // The lock covers the app's screens, but a sheet would stay usable on top of it.
+                dismissPresentedSheets()
+            }
             scheduleDemoAlertsAhead()
             if !settings.runInBackground, started, !isDemo {
                 // Saves battery: no Bluetooth while closed, so no alerts and no stale Lock Screen value.
@@ -808,6 +841,14 @@ final class AppModel {
 
     func unlock() async {
         isLocked = !(await BiometricLock.authenticate())
+    }
+
+    private func dismissPresentedSheets() {
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows where window.rootViewController?.presentedViewController != nil {
+                window.rootViewController?.dismiss(animated: false)
+            }
+        }
     }
 
     private func startBatteryMonitoring() {
@@ -835,18 +876,34 @@ final class AppModel {
 
     // MARK: Backup
 
-    func makeBackup(password: String) throws -> URL {
+    /// Writes an encrypted backup. Loading months of readings and 200,000 key-derivation rounds
+    /// take seconds, so they run off the main thread. The archive only holds real readings, so
+    /// a backup made in the demo still has the whole history.
+    func makeBackup(password: String) async throws -> URL {
         let now = Date()
-        let all = isDemo ? [] : ((try? stores.archive?.load(from: now.addingTimeInterval(-Self.archiveDays * 86_400),
-                                                             to: now.addingTimeInterval(3600))) ?? [])
+        let archive = stores.archive
+        let start = now.addingTimeInterval(-Self.archiveDays * 86_400)
+        let end = now.addingTimeInterval(3600)
         let payload = BackupPayload(createdAt: now, settings: settings, sensor: sensor.record,
-                                    logbook: logbook, fingersticks: fingersticks, readings: all)
-        return try BackupService.write(payload, password: password)
+                                    logbook: logbook, fingersticks: fingersticks, readings: [])
+        return try await Task.detached(priority: .userInitiated) {
+            var full = payload
+            full.readings = (try? archive?.load(from: start, to: end)) ?? []
+            return try BackupService.write(full, password: password)
+        }.value
     }
 
     /// Restores a backup, merging notes, fingersticks and readings with what's already here.
-    func restoreBackup(from url: URL, password: String) throws -> String {
-        let payload = try BackupService.read(from: url, password: password)
+    func restoreBackup(from url: URL, password: String) async throws -> String {
+        let archive = stores.archive
+        // Decrypting, and finding which readings are already here, run off the main thread.
+        let (payload, newReadings) = try await Task.detached(priority: .userInitiated) { () -> (BackupPayload, [GlucoseReading]) in
+            let payload = try BackupService.read(from: url, password: password)
+            guard let archive, let first = payload.readings.map(\.timestamp).min(),
+                  let last = payload.readings.map(\.timestamp).max() else { return (payload, payload.readings) }
+            let known = Set(((try? archive.load(from: first, to: last.addingTimeInterval(1))) ?? []).map(\.id))
+            return (payload, payload.readings.filter { !known.contains($0.id) })
+        }.value
         var restored = payload.settings
         restored.onboardingDone = true
         settings = restored
@@ -857,19 +914,25 @@ final class AppModel {
         let knownSticks = Set(fingersticks.map(\.id))
         fingersticks = (fingersticks + payload.fingersticks.filter { !knownSticks.contains($0.id) }).sorted { $0.date > $1.date }
         try? stores.fingersticks.save(fingersticks)
-        try stores.archive?.append(payload.readings)
+        // Only readings not already on file: restoring twice mustn't grow the day files.
+        try stores.archive?.append(newReadings)
         if sensor.record == nil, let record = payload.sensor {
             sensor.restore(record)
         }
         settingsChanged()
         activateSource()
-        return "Restored \(payload.readings.count) readings, \(payload.logbook.count) notes and \(payload.fingersticks.count) fingersticks."
+        let already = payload.readings.count - newReadings.count
+        return "Restored \(payload.readings.count) readings" + (already > 0 ? " (\(already) were already here)" : "")
+            + ", \(payload.logbook.count) notes and \(payload.fingersticks.count) fingersticks."
     }
 
-    /// Erases readings, logbook, fingersticks, captures and the sensor pairing.
+    /// Erases readings, logbook, fingersticks, captures, exported files, the decision log and the
+    /// sensor pairing.
     func deleteAllData() {
         sensor.forget()
+        sensor.clearCaptures()
         stores.deleteEverything()
+        engine.restoreLog([])
         readings = []
         logbook = []
         fingersticks = []

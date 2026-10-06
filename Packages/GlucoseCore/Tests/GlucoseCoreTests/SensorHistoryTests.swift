@@ -41,6 +41,41 @@ final class SensorHistoryTests: XCTestCase {
         XCTAssertTrue(history.entries[0].isActive, "re-pairing doesn't close the same sensor")
     }
 
+    func testManualSensorsGoInByStartDateAndKeepTheCurrentOne() {
+        var history = SensorHistory()
+        var current = sensor("NOW", daysAgo: 2)
+        current.printedSerial = "0M00CURRENT"
+        history.record(current, at: now)
+        for i in 1...5 {
+            history.addManual(sensor("OLD\(i)", daysAgo: Double(i) * 14 + 2), currentID: "NOW")
+        }
+        XCTAssertEqual(history.entries.map(\.id), ["NOW", "OLD1", "OLD2", "OLD3", "OLD4"],
+                       "the current sensor stays first and the oldest-started manual one goes")
+        XCTAssertTrue(history.entries[0].isActive, "adding past sensors doesn't close the current one")
+        XCTAssertEqual(history.entries[0].printedSerial, "0M00CURRENT")
+
+        // A sensor started after the current one (typed in late) still goes in by date.
+        history.addManual(sensor("NEWER", daysAgo: 1), currentID: "NOW")
+        XCTAssertEqual(history.entries.first?.id, "NEWER")
+        XCTAssertTrue(history.entries.contains { $0.id == "NOW" })
+    }
+
+    func testPairingAgainAfterForgetReopensTheSensor() {
+        var history = SensorHistory()
+        history.record(sensor("A"), at: now)
+        var edited = history.entries[0]
+        edited.printedSerial = "0M00ABCDEF"
+        edited.note = "Left arm"
+        history.update(edited)
+        history.markEnded(id: "A", at: now.addingTimeInterval(3600), reason: .removedEarly)
+
+        history.record(sensor("A"), at: now.addingTimeInterval(7200), reopen: true)
+        XCTAssertTrue(history.entries[0].isActive)
+        XCTAssertNil(history.entries[0].endReason)
+        XCTAssertEqual(history.entries[0].printedSerial, "0M00ABCDEF")
+        XCTAssertEqual(history.entries[0].note, "Left arm")
+    }
+
     func testMarkEndedOnlyOnce() {
         var history = SensorHistory()
         history.record(sensor("A"), at: now)

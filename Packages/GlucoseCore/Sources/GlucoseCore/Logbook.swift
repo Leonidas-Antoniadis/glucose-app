@@ -72,7 +72,9 @@ public struct LogEntry: Codable, Hashable, Identifiable, Sendable {
     }
 
     public static func format(_ value: Double) -> String {
-        value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
+        // Int(_:) traps for huge or non-finite values, e.g. a 19-digit carb amount typed by mistake.
+        guard value.isFinite, abs(value) < 1e9 else { return String(format: "%.1f", value) }
+        return value.rounded() == value ? String(Int(value)) : String(format: "%.1f", value)
     }
 }
 

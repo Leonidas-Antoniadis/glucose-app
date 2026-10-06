@@ -194,4 +194,30 @@ final class AlertEngineTests: XCTestCase {
         XCTAssertTrue(e.log.contains { $0.contains("fired L70") })
         XCTAssertTrue(e.log.contains { $0.contains("re-armed L70") })
     }
+
+    func testLogExplainsWaitsInLocalTimeAndTheChosenUnit() throws {
+        var e = AlertEngine(ruleSet: try AlertRuleSet(rules: [rule("L70", .low, 70, confirm: 5)], trendAlerts: []),
+                            calendar: {
+                                var athens = Calendar(identifier: .gregorian) // Athens in winter, UTC+2
+                                athens.timeZone = TimeZone(secondsFromGMT: 2 * 3600)!
+                                return athens
+                            }())
+        e.unit = .mmolL
+        _ = run(&e, [90, 68, 67, 66])
+        let wait = e.log.filter { $0.contains("L70 stays quiet: waiting 5 min to confirm") }
+        XCTAssertEqual(wait.count, 1, "logged once, not on every reading")
+        guard let line = wait.first else { return XCTFail("no confirmation wait logged: \(e.log)") }
+        XCTAssertTrue(line.hasPrefix("2026-01-05 14:01:00"), "noon UTC is 14:00 in Athens: \(line)")
+        XCTAssertTrue(line.hasSuffix("at 3.8 mmol/L"), line)
+    }
+
+    func testLogCarriesIntoANewEngine() throws {
+        var old = try engine([rule("L70", .low, 70)])
+        _ = run(&old, [90, 65])
+        var fresh = try engine([rule("L70", .low, 70)])
+        fresh.restoreLog(old.log)
+        fresh.note("alert memory reset", at: TestSupport.noon)
+        XCTAssertTrue(fresh.log.contains { $0.contains("fired L70") })
+        XCTAssertEqual(fresh.log.last?.hasSuffix("alert memory reset"), true)
+    }
 }

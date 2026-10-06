@@ -7,11 +7,10 @@ import GlucoseCore
 enum ReportExporter {
     static let pageSize = CGSize(width: 595, height: 842) // A4 in points
 
-    static func pdf(stats: GlucoseStatistics, readings: [GlucoseReading], period: DateInterval, unit: GlucoseUnit,
+    static func pdf(stats: GlucoseStatistics, profile: AmbulatoryGlucoseProfile, period: DateInterval, unit: GlucoseUnit,
                     calibrated: Bool) -> URL? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Glucose report \(fileDate(period.end)).pdf")
-        let document = ReportDocument(stats: stats, profile: AmbulatoryGlucoseProfile(readings: readings), period: period, unit: unit,
-                                      calibrated: calibrated)
+        let url = AppStores.exportsDirectory.appendingPathComponent("Glucose report \(fileDate(period.end)).pdf")
+        let document = ReportDocument(stats: stats, profile: profile, period: period, unit: unit, calibrated: calibrated)
             .frame(width: pageSize.width, height: pageSize.height)
         let renderer = ImageRenderer(content: document)
         var written = false
@@ -28,11 +27,12 @@ enum ReportExporter {
     }
 
     /// One CSV per data type, combined in a folder-like single file with section headers.
-    static func csvBundle(readings: [GlucoseReading], logbook: [LogEntry], fingersticks: [FingerstickEntry]) -> URL? {
+    /// Not tied to the main thread: 90 days of readings take a moment to write.
+    nonisolated static func csvBundle(readings: [GlucoseReading], logbook: [LogEntry], fingersticks: [FingerstickEntry]) -> URL? {
         let text = "# Readings\n" + CSVExport.readings(readings)
             + "\n# Notes\n" + CSVExport.logbook(logbook)
             + "\n# Fingersticks\n" + CSVExport.fingersticks(fingersticks)
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Glucose data \(fileDate(Date())).csv")
+        let url = AppStores.exportsDirectory.appendingPathComponent("Glucose data \(fileDate(Date())).csv")
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             return url
@@ -41,7 +41,7 @@ enum ReportExporter {
         }
     }
 
-    private static func fileDate(_ date: Date) -> String {
+    nonisolated private static func fileDate(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: date)

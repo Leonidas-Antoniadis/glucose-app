@@ -88,10 +88,12 @@ public struct AlertEngine: Sendable {
     public private(set) var trendStates: [UUID: TrendState] = [:]
     /// The last 30 minutes of readings, for trend calculations.
     public private(set) var recent: [GlucoseReading] = []
-    /// Log of every decision, for debugging and tuning thresholds.
+    /// Log of every decision, for debugging and tuning thresholds. Times are local, values are in `unit`.
     public private(set) var log: [String] = []
     public private(set) var lastProcessedAt: Date?
     public var maxLogEntries = 500
+    /// The unit values are written in in the decision log.
+    public var unit: GlucoseUnit = .mgdL
     /// The last quiet reason logged per alert.
     private var quietNotes: [UUID: String] = [:]
 
@@ -175,7 +177,7 @@ public struct AlertEngine: Sendable {
                 if state.isCrossed {
                     if state.crossedSince == nil { state.crossedSince = now }
                 } else if rule.hasRecovered(at: value) {
-                    if state.firedAt != nil { record(now, "re-armed \(rule.name) at \(value)") }
+                    if state.firedAt != nil { record(now, "re-armed \(rule.name) at \(show(value))") }
                     state = RuleState()
                     quietNotes[rule.id] = nil
                 }
@@ -186,7 +188,13 @@ public struct AlertEngine: Sendable {
             let active = rules.filter { rule in
                 guard let state = states[rule.id], state.isCrossed, let since = state.crossedSince else { return false }
                 let confirmed = now.timeIntervalSince(since) >= Double(rule.confirmationMinutes) * 60
-                return confirmed && rule.schedule.isActive(at: now, calendar: calendar)
+                let scheduled = rule.schedule.isActive(at: now, calendar: calendar)
+                if state.firedAt == nil, !(confirmed && scheduled) {
+                    // Logged once per reason, so the value is when it started.
+                    let reason = !scheduled ? "outside its schedule" : "waiting \(rule.confirmationMinutes) min to confirm"
+                    noteQuiet(rule.id, rule.name, reason, at: now, value: value)
+                }
+                return confirmed && scheduled
             }
             if direction == .low {
                 audibleLowActive = active.contains { rule in
@@ -203,7 +211,7 @@ public struct AlertEngine: Sendable {
                 states[rule.id]?.firedAt = now
                 states[rule.id]?.lastNotifiedAt = now
                 states[rule.id]?.snoozedUntil = topSnooze
-                record(now, "suppressed \(rule.name) (covered by \(top.name)) at \(value)")
+                record(now, "suppressed \(rule.name) (covered by \(top.name)) at \(show(value))")
             }
 
             // 4. Decide whether the top rule sounds now.
@@ -226,7 +234,7 @@ public struct AlertEngine: Sendable {
                     ruleID: top.id, ruleName: top.name, direction: direction, valueMgdL: value, date: now,
                     sound: top.sound, isCritical: top.isCritical, criticalVolume: top.criticalVolume, kind: kind
                 ))
-                record(now, "fired \(top.name) (\(kind)) at \(value)")
+                record(now, "fired \(top.name) (\(kind)) at \(show(value))")
                 quietNotes[top.id] = nil
             } else if let reason = quietReason(for: top, now: now) {
                 noteQuiet(top.id, top.name, reason, at: now)
@@ -286,7 +294,7 @@ public struct AlertEngine: Sendable {
                     ruleID: alert.id, ruleName: alert.name, direction: alert.kind.direction, valueMgdL: value, date: now,
                     sound: alert.sound, isCritical: alert.isCritical, criticalVolume: 1, kind: .initial
                 ))
-                record(now, "fired \(alert.name) at \(value), rate \(rate.map { String(format: "%.2f", $0) } ?? "-")")
+                record(now, "fired \(alert.name) at \(show(value)), rate \(rate.map { unit.formatRate(mgdLPerMinute: $0) } ?? "-")")
                 quietNotes[alert.id] = nil
             } else if triggered, !state.fired {
                 let reason = suppressed ? "a low alert is already sounding" : snoozed ? "snoozed" : "outside its schedule"
@@ -415,14 +423,39 @@ public struct AlertEngine: Sendable {
     }
 
     /// Logs why an alert stays quiet, once per reason, so a long episode doesn't flood the log.
-    private mutating func noteQuiet(_ id: UUID, _ name: String, _ reason: String, at date: Date) {
+    private mutating func noteQuiet(_ id: UUID, _ name: String, _ reason: String, at date: Date, value: Double? = nil) {
         guard quietNotes[id] != reason else { return }
         quietNotes[id] = reason
-        record(date, "\(name) stays quiet: \(reason)")
+        record(date, "\(name) stays quiet: \(reason)" + (value.map { " at \(show($0))" } ?? ""))
+    }
+
+    // MARK: Decision log
+
+    /// Adds a line from outside the engine, e.g. a late reading the app didn't alert on.
+    public mutating func note(_ message: String, at date: Date) {
+        record(date, message)
+    }
+
+    /// Replaces the log, e.g. to carry it into a new engine after the data source changes.
+    public mutating func restoreLog(_ lines: [String]) {
+        log = Array(lines.suffix(maxLogEntries))
+    }
+
+    private func show(_ mgdL: Double) -> String {
+        unit.formatReading(mgdL: mgdL, includeSymbol: true)
+    }
+
+    /// Local time, as on the phone's clock and in the notifications.
+    private func timeText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
     }
 
     private mutating func record(_ date: Date, _ message: String) {
-        log.append("\(ISO8601DateFormatter().string(from: date)) \(message)")
+        log.append("\(timeText(date)) \(message)")
         if log.count > maxLogEntries {
             log.removeFirst(log.count - maxLogEntries)
         }

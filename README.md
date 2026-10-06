@@ -24,7 +24,7 @@ Captured automatically in the iOS Simulator by the iOS build, using the demo sen
 | Alerts | Alert editor | First launch |
 |:---:|:---:|:---:|
 | <img src="docs/screenshots/alerts.png" width="230" alt="Low and high alert rules"> | <img src="docs/screenshots/alert-editor.png" width="230" alt="Editing an alert rule"> | <img src="docs/screenshots/onboarding.png" width="230" alt="Onboarding with the not-a-medical-device notice"> |
-| 5 low + 5 high, separate low and high alarms | Sound, Critical Alert, repeat, snooze, schedule | Safety notice, units, presets, data source |
+| 5 low + 5 high, separate low and high alarms | Sound, Sound through Silent mode and Focus, repeat, snooze, schedule | Safety notice, units, presets, data source |
 
 | Battery and Lock Screen |
 |:---:|
@@ -130,7 +130,7 @@ The protocol follows community reverse-engineering (DiaBLE, LibreTransmitter). T
 
 Turn on **Sound through Silent mode and Focus** for an alert (Alerts → tap the alert). Then:
 
-1. **Silent switch:** the app plays the alarm itself, which iOS doesn't mute. Keep **Run in background** on (Settings → Battery and Lock Screen) and the sensor connected. It plays at your **media volume**, so keep that turned up. It stops when you open the app, tap Snooze, or after 30 seconds.
+1. **Silent switch:** the app plays the alarm itself, which iOS doesn't mute. Keep **Run in background** on (Settings → Battery) and the sensor connected. It plays at your **media volume**, so keep that turned up. It stops when you open the app, tap Snooze, or after 30 seconds.
 2. **Focus:** on the iPhone, open **Settings → Notifications → Glucose** and turn on **Time Sensitive Notifications**. The "Open Settings" button on the home screen's Critical alerts card goes straight there.
    - If a Focus still hides the alerts, open **Settings → Focus → (each Focus) → Apps** and add **Glucose**.
 

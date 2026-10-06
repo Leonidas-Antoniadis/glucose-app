@@ -46,7 +46,7 @@ enum BackupService {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        let url = FileManager.default.temporaryDirectory
+        let url = AppStores.exportsDirectory
             .appendingPathComponent("Glucose backup \(formatter.string(from: payload.createdAt)).glucosebackup")
         try data.write(to: url, options: [.atomic, .completeFileProtection])
         return url

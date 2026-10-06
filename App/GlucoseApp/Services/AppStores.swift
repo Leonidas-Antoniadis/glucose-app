@@ -14,6 +14,8 @@ struct AppStores {
     let savedCaptures: JSONFileStore<[SavedCapture]>
     /// The alert engine's memory (snoozes, repeats, decision log), so a relaunch doesn't reset it.
     let alertState: JSONFileStore<AlertEngine.Snapshot>
+    /// The alert decision log, kept apart from the alert state so it survives a change of data source.
+    let decisionLog: JSONFileStore<[String]>
     let archive: ReadingArchive?
     let capturesURL: URL
 
@@ -34,6 +36,7 @@ struct AppStores {
         sensorHistory = JSONFileStore(url: directory.appendingPathComponent("sensor-history.json"))
         savedCaptures = JSONFileStore(url: directory.appendingPathComponent("saved-captures.json"))
         alertState = JSONFileStore(url: directory.appendingPathComponent("alert-state.json"))
+        decisionLog = JSONFileStore(url: directory.appendingPathComponent("decision-log.json"))
         archive = try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
         capturesURL = directory.appendingPathComponent("captures.log")
 
@@ -81,6 +84,27 @@ struct AppStores {
         fingersticks.delete()
         savedCaptures.delete()
         alertState.delete()
+        decisionLog.delete()
         try? FileManager.default.removeItem(at: capturesURL)
+        Self.clearExports()
+    }
+
+    /// Where reports, backups and capture files are written for the share sheet. One folder, so
+    /// "Delete all data" and the next launch can remove every copy left behind.
+    static var exportsDirectory: URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Exports", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    static func clearExports() {
+        let fileManager = FileManager.default
+        let tmp = fileManager.temporaryDirectory
+        try? fileManager.removeItem(at: tmp.appendingPathComponent("Exports", isDirectory: true))
+        // Versions up to 0.2 wrote them straight into tmp.
+        let legacy = ["Glucose report ", "Glucose data ", "Glucose backup ", "Libre captures"]
+        for name in (try? fileManager.contentsOfDirectory(atPath: tmp.path)) ?? [] where legacy.contains(where: name.hasPrefix) {
+            try? fileManager.removeItem(at: tmp.appendingPathComponent(name))
+        }
     }
 }

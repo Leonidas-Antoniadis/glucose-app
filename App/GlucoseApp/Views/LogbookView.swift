@@ -252,7 +252,7 @@ struct AddLogEntryView: View {
         switch kind {
         case .fastInsulin, .slowInsulin: return (amount ?? 0) > 0 && (amount ?? 0) <= 100
         case .bloodGlucose: return model.unit.parse(amountText).map { (20...600).contains($0) } ?? false
-        case .food: return amountText.isEmpty || (amount ?? -1) >= 0
+        case .food: return amountText.isEmpty || (0...1000).contains(amount ?? -1)
         case .exercise, .note: return true
         }
     }

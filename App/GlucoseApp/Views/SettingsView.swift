@@ -110,20 +110,34 @@ struct BackupView: View {
     @State private var restorePassword = ""
     @State private var pendingRestore: URL?
     @State private var message: String?
+    /// A backup or restore is running (it takes a few seconds with months of readings).
+    @State private var working = false
 
     var body: some View {
         Form {
             Section {
                 SecureField("Password (at least 8 characters)", text: $password)
-                Button("Create encrypted backup", systemImage: "lock.doc") {
-                    do {
-                        backupURL = try model.makeBackup(password: password)
-                    } catch {
-                        message = error.localizedDescription
+                Button {
+                    working = true
+                    Task {
+                        do {
+                            backupURL = try await model.makeBackup(password: password)
+                        } catch {
+                            message = error.localizedDescription
+                        }
+                        working = false
+                    }
+                } label: {
+                    HStack {
+                        Label("Create encrypted backup", systemImage: "lock.doc")
+                        if working {
+                            Spacer()
+                            ProgressView()
+                        }
                     }
                 }
-                .disabled(password.count < 8)
-                if let backupURL {
+                .disabled(password.count < 8 || working)
+                if let backupURL, !working {
                     ShareLink(item: backupURL) { Label("Save or share backup", systemImage: "square.and.arrow.up") }
                 }
             } header: {
@@ -134,23 +148,38 @@ struct BackupView: View {
 
             Section("Restore") {
                 Button("Choose backup file…", systemImage: "arrow.down.doc") { importing = true }
+                    .disabled(working)
                 if pendingRestore != nil {
                     SecureField("Backup password", text: $restorePassword)
-                    Button("Restore") {
+                    Button {
                         guard let url = pendingRestore else { return }
-                        do {
-                            message = try model.restoreBackup(from: url, password: restorePassword)
-                            pendingRestore = nil
-                            restorePassword = ""
-                        } catch {
-                            message = error.localizedDescription
+                        working = true
+                        Task {
+                            do {
+                                message = try await model.restoreBackup(from: url, password: restorePassword)
+                                pendingRestore = nil
+                                restorePassword = ""
+                            } catch {
+                                message = error.localizedDescription
+                            }
+                            working = false
+                        }
+                    } label: {
+                        HStack {
+                            Text("Restore")
+                            if working {
+                                Spacer()
+                                ProgressView()
+                            }
                         }
                     }
-                    .disabled(restorePassword.isEmpty)
+                    .disabled(restorePassword.isEmpty || working)
                 }
             }
         }
         .navigationTitle("Backup")
+        // Leaving mid-way would let a second backup or restore start.
+        .navigationBarBackButtonHidden(working)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.data]) { result in
             if case .success(let url) = result { pendingRestore = url }
         }

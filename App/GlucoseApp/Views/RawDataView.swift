@@ -106,6 +106,8 @@ struct RawDataView: View {
             }
         }
         .navigationTitle("Sensor data")
+        // A file prepared earlier would still hold captures deleted since, and miss new ones.
+        .onChange(of: sensor.saved.map(\.id)) { exportURL = nil }
     }
 }
 

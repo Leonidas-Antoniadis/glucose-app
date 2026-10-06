@@ -80,15 +80,19 @@ public struct SensorHistory: Codable, Hashable, Sendable {
     }
 
     /// Adds a sensor (or refreshes it if it's already known, keeping your typed-in details).
-    /// Any other sensor that is still open is marked as replaced.
-    public mutating func record(_ entry: SensorHistoryEntry, at date: Date) {
+    /// Any other sensor that is still open is marked as replaced. `reopen` is for a sensor that
+    /// is running again (paired after "Forget this sensor", or after another sensor): its end
+    /// is cleared instead of kept.
+    public mutating func record(_ entry: SensorHistoryEntry, at date: Date, reopen: Bool = false) {
         var merged = entry
         if let index = entries.firstIndex(where: { $0.id == entry.id }) {
             let existing = entries.remove(at: index)
             merged.printedSerial = existing.printedSerial.isEmpty ? entry.printedSerial : existing.printedSerial
             merged.note = existing.note.isEmpty ? entry.note : existing.note
-            merged.endedAt = existing.endedAt
-            merged.endReason = existing.endReason
+            if !reopen {
+                merged.endedAt = existing.endedAt
+                merged.endReason = existing.endReason
+            }
             merged.pairedAt = existing.pairedAt ?? entry.pairedAt
         }
         for index in entries.indices where entries[index].isActive {
@@ -98,6 +102,23 @@ public struct SensorHistory: Codable, Hashable, Sendable {
         entries.insert(merged, at: 0)
         if entries.count > Self.limit {
             entries.removeLast(entries.count - Self.limit)
+        }
+    }
+
+    /// Adds a sensor typed in by hand (one used with LibreLink, say). It goes in by start date,
+    /// newest first, and closes no other sensor. Over the limit, the oldest-started sensor goes,
+    /// never `currentID`, the one this app is reading.
+    public mutating func addManual(_ entry: SensorHistoryEntry, currentID: String?) {
+        entries.removeAll { $0.id == entry.id }
+        let start = entry.startedAt ?? entry.pairedAt ?? .distantPast
+        let index = entries.firstIndex { ($0.startedAt ?? $0.pairedAt ?? .distantPast) < start } ?? entries.endIndex
+        entries.insert(entry, at: index)
+        while entries.count > Self.limit {
+            let removable = entries.indices.filter { entries[$0].id != currentID }
+            guard let oldest = removable.min(by: {
+                (entries[$0].startedAt ?? .distantPast) < (entries[$1].startedAt ?? .distantPast)
+            }) else { break }
+            entries.remove(at: oldest)
         }
     }
 

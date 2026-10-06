@@ -257,7 +257,7 @@ final class SensorConnection {
                 uidHex: newRecord.uid.hexString, patchInfoHex: newRecord.patchInfo.hexString,
                 startedAt: newRecord.activatedAt, pairedAt: Date(), expectedEnd: newRecord.expiresAt,
                 note: scan.activationResponse != nil ? "Started in this app" : ""
-            ), at: Date())
+            ), at: Date(), reopen: true) // the sensor is running, even if it was forgotten earlier
             saveHistory()
             log("Paired \(newRecord.type.displayName), serial \(newRecord.serial), age \(fram.ageMinutes) min")
             importFRAM(fram, record: newRecord)
@@ -389,17 +389,7 @@ final class SensorConnection {
 
     /// Adds a sensor used outside this app (e.g. with LibreLink), so its details are on file too.
     func addManualSensor(_ entry: SensorHistoryEntry) {
-        var history = self.history
-        history.record(entry, at: entry.pairedAt ?? Date())
-        // A manually added sensor shouldn't close the one this app is reading.
-        if let current = record, let index = history.entries.firstIndex(where: { $0.id == current.uid.hexString }),
-           history.entries[index].endReason == .replaced {
-            var reopened = history.entries[index]
-            reopened.endedAt = nil
-            reopened.endReason = nil
-            history.update(reopened)
-        }
-        self.history = history
+        history.addManual(entry, currentID: record?.uid.hexString)
         saveHistory()
     }
 
@@ -654,9 +644,18 @@ final class SensorConnection {
         try? stores.savedCaptures.save(saved)
     }
 
+    /// Empties the kept captures and the recent packets and scans, for "Delete all data". Without
+    /// this, keeping one more capture would write the old ones back to disk.
+    func clearCaptures() {
+        saved = []
+        packets.removeAll { !$0.isSimulated }
+        nfcRecords.removeAll { !$0.isSimulated }
+        stores.savedCaptures.delete()
+    }
+
     /// Writes the saved captures to a text file for sharing.
     func exportSaved() -> URL? {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("Libre captures.txt")
+        let url = AppStores.exportsDirectory.appendingPathComponent("Libre captures.txt")
         do {
             try SavedCapture.exportText(saved).write(to: url, atomically: true, encoding: .utf8)
             return url

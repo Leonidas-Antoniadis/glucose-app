@@ -45,28 +45,65 @@ enum SoundCatalog {
         return names.sorted().map { Option(id: customPrefix + $0, title: ($0 as NSString).deletingPathExtension) }
     }
 
-    /// Copies an audio file into Library/Sounds and returns its tune id.
+    /// Converts an audio file to 16-bit linear PCM in a .caf file in Library/Sounds and returns its
+    /// tune id. Notifications only play PCM, IMA4, µLaw or aLaw sounds: an MP3 or M4A copied as it
+    /// is previews fine but the alert plays the default sound.
     static func importTune(from url: URL) throws -> String {
         let accessing = url.startAccessingSecurityScopedResource()
         defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        try FileManager.default.createDirectory(at: soundsDirectory, withIntermediateDirectories: true)
-        let safeName = url.lastPathComponent.replacingOccurrences(of: " ", with: "_")
-        let destination = soundsDirectory.appendingPathComponent(safeName)
-        try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.copyItem(at: url, to: destination)
-        let duration = (try? AVAudioPlayer(contentsOf: destination))?.duration ?? 0
-        if duration > 30 {
-            try? FileManager.default.removeItem(at: destination)
-            throw ImportError.tooLong(duration)
+        let input: AVAudioFile
+        do {
+            input = try AVAudioFile(forReading: url)
+        } catch {
+            throw ImportError.unreadable
         }
-        return customPrefix + safeName
+        let duration = Double(input.length) / input.fileFormat.sampleRate
+        guard duration > 0 else { throw ImportError.unreadable }
+        guard duration <= 30 else { throw ImportError.tooLong(duration) }
+
+        try FileManager.default.createDirectory(at: soundsDirectory, withIntermediateDirectories: true)
+        let baseName = (url.lastPathComponent.replacingOccurrences(of: " ", with: "_") as NSString).deletingPathExtension
+        let fileName = baseName + ".caf"
+        let destination = soundsDirectory.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: destination)
+        do {
+            try transcode(input, to: destination)
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            throw ImportError.unreadable
+        }
+        return customPrefix + fileName
+    }
+
+    private static func transcode(_ input: AVAudioFile, to destination: URL) throws {
+        let format = input.processingFormat
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: format.channelCount,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        // The file is finished when `output` goes away at the end of this function.
+        let output = try AVAudioFile(forWriting: destination, settings: settings,
+                                     commonFormat: format.commonFormat, interleaved: format.isInterleaved)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 32_768) else { throw ImportError.unreadable }
+        while input.framePosition < input.length {
+            try input.read(into: buffer)
+            guard buffer.frameLength > 0 else { break }
+            try output.write(from: buffer)
+        }
     }
 
     enum ImportError: LocalizedError {
         case tooLong(TimeInterval)
+        case unreadable
         var errorDescription: String? {
             switch self {
             case .tooLong(let seconds): return "iOS plays alert sounds of up to 30 seconds. This file is \(Int(seconds)) seconds."
+            case .unreadable: return "This file can't be played as an alert sound. Try an MP3, M4A, WAV or AIFF file."
             }
         }
     }

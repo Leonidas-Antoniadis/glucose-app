@@ -2,16 +2,44 @@ import SwiftUI
 import Charts
 import GlucoseCore
 
+/// Everything a report shows, computed once off the main thread.
+private struct ReportData {
+    let days: Double
+    let period: DateInterval
+    let readings: [GlucoseReading]
+    let stats: GlucoseStatistics?
+    let split: (day: GlucoseStatistics?, night: GlucoseStatistics?)
+    let profile: AmbulatoryGlucoseProfile
+    let overlay: [DailyPatterns.DaySeries]
+
+    static func build(days: Double, period: DateInterval, readings: [GlucoseReading]) async -> ReportData {
+        await Task.detached(priority: .userInitiated) {
+            ReportData(days: days, period: period, readings: readings,
+                       stats: GlucoseStatistics(readings: readings, period: period),
+                       split: DailyPatterns.dayNight(readings, period: period),
+                       profile: AmbulatoryGlucoseProfile(readings: readings),
+                       overlay: days <= 14 ? DailyPatterns.overlay(readings) : [])
+        }.value
+    }
+}
+
 struct ReportsView: View {
     @Environment(AppModel.self) private var model
     @State private var days: Double = 14
     @State private var pdfURL: URL?
     @State private var csvURL: URL?
+    @State private var report: ReportData?
+
+    /// Changes when the period changes, and at most every 5 minutes as readings arrive, so the
+    /// statistics aren't recomputed on every redraw.
+    private var refreshKey: String {
+        let bucket = model.latest.map { Int($0.timestamp.timeIntervalSince1970 / 300) } ?? 0
+        return "\(days)-\(bucket)-\(model.isDemo)"
+    }
 
     var body: some View {
-        let period = currentPeriod
-        let readings = period.map { model.archivedReadings(in: $0) } ?? []
-        let stats = period.flatMap { GlucoseStatistics(readings: readings, period: $0) }
+        // A report for another period is never shown while the new one is computed.
+        let shown = report?.days == days ? report : nil
 
         NavigationStack {
             List {
@@ -26,7 +54,9 @@ struct ReportsView: View {
                     .pickerStyle(.segmented)
                 }
 
-                if let stats, let period {
+                if let shown, let stats = shown.stats {
+                    let period = shown.period
+                    let readings = shown.readings
                     let u = model.unit
                     Section("Time in ranges") {
                         TimeInRangeBar(ranges: stats.ranges).frame(height: 28)
@@ -50,7 +80,7 @@ struct ReportsView: View {
                         MetricRow(label: "Sensor data", value: String(format: "%.0f %%", stats.dataSufficiency * 100),
                                   warning: !stats.hasSufficientData)
                     }
-                    let split = DailyPatterns.dayNight(readings, period: period)
+                    let split = shown.split
                     Section("Day and night") {
                         if let day = split.day {
                             MetricRow(label: "Day (06-22): in range", value: String(format: "%.0f %%", day.ranges.inRange * 100))
@@ -63,7 +93,7 @@ struct ReportsView: View {
                         }
                     }
                     Section {
-                        AGPChart(profile: AmbulatoryGlucoseProfile(readings: readings), unit: model.unit)
+                        AGPChart(profile: shown.profile, unit: model.unit)
                             .frame(height: 220)
                     } header: {
                         Text("Ambulatory Glucose Profile")
@@ -72,20 +102,26 @@ struct ReportsView: View {
                     }
                     if days <= 14 {
                         Section("Daily overlay") {
-                            DailyOverlayChart(days: DailyPatterns.overlay(readings), unit: model.unit)
+                            DailyOverlayChart(days: shown.overlay, unit: model.unit)
                                 .frame(height: 220)
                         }
                     }
                     Section {
                         Button("Create PDF report", systemImage: "doc.richtext") {
-                            pdfURL = ReportExporter.pdf(stats: stats, readings: readings, period: period, unit: model.unit,
+                            pdfURL = ReportExporter.pdf(stats: stats, profile: shown.profile, period: period, unit: model.unit,
                                                         calibrated: model.sensor.record?.calibration.isCalibrated == true)
                         }
                         if let pdfURL {
                             ShareLink(item: pdfURL) { Label("Share PDF", systemImage: "square.and.arrow.up") }
                         }
                         Button("Create CSV (readings, notes, fingersticks)", systemImage: "tablecells") {
-                            csvURL = ReportExporter.csvBundle(readings: readings, logbook: model.logbook, fingersticks: model.fingersticks)
+                            let logbook = model.logbook
+                            let fingersticks = model.fingersticks
+                            Task {
+                                csvURL = await Task.detached(priority: .userInitiated) {
+                                    ReportExporter.csvBundle(readings: readings, logbook: logbook, fingersticks: fingersticks)
+                                }.value
+                            }
                         }
                         if let csvURL {
                             ShareLink(item: csvURL) { Label("Share CSV", systemImage: "square.and.arrow.up") }
@@ -95,6 +131,12 @@ struct ReportsView: View {
                     } footer: {
                         Text("Files are created on the phone and shared only where you send them.")
                     }
+                } else if shown == nil {
+                    HStack {
+                        Spacer()
+                        ProgressView("Calculating…")
+                        Spacer()
+                    }
                 } else {
                     ContentUnavailableView("Not enough data yet", systemImage: "chart.bar")
                 }
@@ -103,6 +145,13 @@ struct ReportsView: View {
             .onChange(of: days) {
                 pdfURL = nil
                 csvURL = nil
+            }
+            .task(id: refreshKey) {
+                guard let period = currentPeriod else { return }
+                let readings = await model.reportReadings(in: period)
+                let built = await ReportData.build(days: days, period: period, readings: readings)
+                guard !Task.isCancelled else { return }
+                report = built
             }
         }
     }
