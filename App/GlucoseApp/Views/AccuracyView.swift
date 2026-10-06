@@ -74,8 +74,21 @@ struct AccuracyView: View {
                 MetricRow(label: "Bias", value: biasText(bias))
             }
             if let comparison = report.libreLinkComparison {
-                MetricRow(label: "LibreLink on the same \(comparison.count) check\(comparison.count == 1 ? "" : "s")",
-                          value: String(format: "%.1f %% (this app %.1f %%)", comparison.libreLink, comparison.app))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Compared with LibreLink")
+                    HStack {
+                        Text(String(format: "LibreLink %.1f %%", comparison.libreLink))
+                        Text("·")
+                        Text(String(format: "this app %.1f %%", comparison.app))
+                            .fontWeight(comparison.app <= comparison.libreLink ? .semibold : .regular)
+                    }
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    Text("On the same \(comparison.count) check\(comparison.count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityElement(children: .combine)
             }
         } footer: {
             Text("Only fingersticks not used for calibration count: a calibration point always matches.")
@@ -297,7 +310,8 @@ struct ErrorGridView: View {
         for tick in [100.0, 200, 300, 400] {
             let label = Text(unit.format(mgdL: tick)).font(.caption2).foregroundColor(.secondary)
             context.draw(label, at: CGPoint(x: plot.minX - 4, y: point(0, tick).y), anchor: .trailing)
-            context.draw(label, at: CGPoint(x: point(tick, 0).x, y: plot.maxY + 3), anchor: .top)
+            // The last label ends at the edge instead of running past it.
+            context.draw(label, at: CGPoint(x: point(tick, 0).x, y: plot.maxY + 3), anchor: tick == maxValue ? .topTrailing : .top)
             var grid = Path()
             grid.move(to: point(tick, 0))
             grid.addLine(to: point(tick, maxValue))
