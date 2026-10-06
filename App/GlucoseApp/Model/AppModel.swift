@@ -17,6 +17,8 @@ final class AppModel {
     private(set) var signatureExpiry: Date?
     var lastError: String?
     var isLocked = false
+    /// Goes up each time the Face ID lock engages: views with sheets close them when it changes.
+    private(set) var lockCount = 0
     /// Whether iOS lets alerts marked Critical sound through Silent mode and Focus.
     private(set) var criticalAlertsAllowed = false
     /// Whether Time Sensitive notifications are on, so alerts show during Focus.
@@ -190,13 +192,38 @@ final class AppModel {
     }
 
     /// Readings for a report. A period inside the readings held in memory uses those; a longer
-    /// one decodes the archive off the main thread (90 days is about 130,000 lines).
+    /// one decodes the archive off the main thread (90 days is about 130,000 lines), once: the
+    /// part older than memory is kept for an hour and joined with the newest readings.
     func reportReadings(in interval: DateInterval) async -> [GlucoseReading] {
-        let inMemory = readings.first.map { interval.start >= $0.timestamp } ?? false
-        guard !isDemo, !inMemory, let archive = stores.archive else { return readings(in: interval) }
-        return await Task.detached(priority: .userInitiated) {
-            (try? archive.load(from: interval.start, to: interval.end)) ?? []
-        }.value
+        let inMemory = readings
+        let memoryStart = inMemory.first?.timestamp ?? interval.end
+        guard !isDemo, interval.start < memoryStart, let archive = stores.archive else { return readings(in: interval) }
+        let older: [GlucoseReading]
+        if let cache = archiveCache, cache.start <= interval.start, Date().timeIntervalSince(cache.loadedAt) < 3600 {
+            older = cache.readings
+        } else {
+            let start = interval.start
+            let loaded = await Self.offMain { (try? archive.load(from: start, to: memoryStart)) ?? [] }
+            guard !Task.isCancelled else { return [] }
+            archiveCache = (start, Date(), loaded)
+            older = loaded
+        }
+        return older.filter { $0.timestamp >= interval.start && $0.timestamp < memoryStart } + readings(in: interval)
+    }
+
+    /// The archive part of the last long report, so switching periods doesn't decode it again.
+    @ObservationIgnored private var archiveCache: (start: Date, loadedAt: Date, readings: [GlucoseReading])?
+
+    /// Forgets the cached archive part, after anything rewrote or removed stored readings.
+    func invalidateArchiveCache() {
+        archiveCache = nil
+    }
+
+    /// Runs `work` off the main thread. Cancelling the caller (a view's `.task` going away)
+    /// cancels it too, which a plain `Task.detached` would ignore.
+    nonisolated static func offMain<T>(_ work: @escaping @Sendable () -> T) async -> T {
+        let task = Task.detached(priority: .userInitiated) { work() }
+        return await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     // MARK: Startup
@@ -212,7 +239,7 @@ final class AppModel {
         // sensor waits until the app is opened, as it would after leaving the app.
         if !isActive, !settings.runInBackground, settings.dataSource == .libre {
             pausedInBackground = true
-            sensor.stop()
+            sensor.stop(pausing: true)
         }
         // Reports, backups and captures shared earlier aren't needed any more.
         AppStores.clearExports()
@@ -700,6 +727,7 @@ final class AppModel {
             saveAlertState(force: true)
             do {
                 try stores.archive?.retime(sensorSerial: serial, activatedAt: activatedAt, through: Date())
+                archiveCache = nil
             } catch {
                 lastError = "Couldn't update saved readings: \(error.localizedDescription)"
             }
@@ -860,6 +888,7 @@ final class AppModel {
         saveAlertState(force: true)
         do {
             try stores.archive?.recalibrate(sensorSerial: record.serial, since: since, calibration: record.calibration)
+            archiveCache = nil
         } catch {
             lastError = "Couldn't update saved readings: \(error.localizedDescription)"
         }
@@ -965,6 +994,7 @@ final class AppModel {
         lastPrune = Date()
         let cutoff = Date().addingTimeInterval(-Self.archiveDays * 86_400)
         try? stores.archive?.prune(olderThan: cutoff)
+        archiveCache = nil
         if logbook.contains(where: { $0.date < cutoff }) {
             logbook.removeAll { $0.date < cutoff }
             try? stores.logbook.save(logbook)
@@ -1026,6 +1056,9 @@ final class AppModel {
             if settings.biometricLock {
                 isLocked = true
                 // The lock covers the app's screens, but a sheet would stay usable on top of it.
+                // The app's own sheets close through their state (see `lockCount`), so the same
+                // button opens them again later; anything else (a share sheet) is dismissed here.
+                lockCount += 1
                 dismissPresentedSheets()
             }
             scheduleDemoAlertsAhead()
@@ -1100,14 +1133,23 @@ final class AppModel {
     /// Restores a backup, merging notes, fingersticks and readings with what's already here.
     func restoreBackup(from url: URL, password: String) async throws -> String {
         let archive = stores.archive
-        // Decrypting, and finding which readings are already here, run off the main thread.
-        let (payload, newReadings) = try await Task.detached(priority: .userInitiated) { () -> (BackupPayload, [GlucoseReading]) in
+        // Decrypting, finding which readings are already here and writing the new ones (about
+        // 130,000 for 3 months) all run off the main thread. Nothing else changes until the
+        // readings are safely stored, so a failure leaves the phone as it was.
+        let (payload, added) = try await Task.detached(priority: .userInitiated) { () -> (BackupPayload, Int) in
             let payload = try BackupService.read(from: url, password: password)
-            guard let archive, let first = payload.readings.map(\.timestamp).min(),
-                  let last = payload.readings.map(\.timestamp).max() else { return (payload, payload.readings) }
-            let known = Set(((try? archive.load(from: first, to: last.addingTimeInterval(1))) ?? []).map(\.id))
-            return (payload, payload.readings.filter { !known.contains($0.id) })
+            var newReadings = payload.readings
+            if let archive, let first = payload.readings.map(\.timestamp).min(),
+               let last = payload.readings.map(\.timestamp).max() {
+                let known = Set(((try? archive.load(from: first, to: last.addingTimeInterval(1))) ?? []).map(\.id))
+                newReadings = payload.readings.filter { !known.contains($0.id) }
+            }
+            // Only readings not already on file: restoring twice mustn't grow the day files.
+            try archive?.append(newReadings)
+            return (payload, newReadings.count)
         }.value
+        archiveCache = nil
+
         var restored = payload.settings
         restored.onboardingDone = true
         // The phone keeps its data source: a backup made in the demo mustn't switch a live sensor
@@ -1117,21 +1159,22 @@ final class AppModel {
         settings = restored
 
         let knownNotes = Set(logbook.map(\.id))
-        logbook = (logbook + payload.logbook.filter { !knownNotes.contains($0.id) }).sorted { $0.date > $1.date }
+        let newNotes = payload.logbook.filter { !knownNotes.contains($0.id) }
+        logbook = (logbook + newNotes).sorted { $0.date > $1.date }
         try? stores.logbook.save(logbook)
         let knownSticks = Set(fingersticks.map(\.id))
-        fingersticks = (fingersticks + payload.fingersticks.filter { !knownSticks.contains($0.id) }).sorted { $0.date > $1.date }
+        let newSticks = payload.fingersticks.filter { !knownSticks.contains($0.id) }
+        fingersticks = (fingersticks + newSticks).sorted { $0.date > $1.date }
         try? stores.fingersticks.save(fingersticks)
-        // Only readings not already on file: restoring twice mustn't grow the day files.
-        try stores.archive?.append(newReadings)
         if sensor.record == nil, let record = payload.sensor {
             sensor.restore(record)
         }
         settingsChanged()
         activateSource()
-        let already = payload.readings.count - newReadings.count
-        return "Restored \(payload.readings.count) readings" + (already > 0 ? " (\(already) were already here)" : "")
-            + ", \(payload.logbook.count) notes and \(payload.fingersticks.count) fingersticks."
+        func count(_ n: Int, _ thing: String) -> String { "\(n) \(thing)\(n == 1 ? "" : "s")" }
+        return "Added \(count(added, "reading")), \(count(newNotes.count, "note")) and \(count(newSticks.count, "fingerstick"))"
+            + (added < payload.readings.count || newNotes.count < payload.logbook.count || newSticks.count < payload.fingersticks.count
+               ? ". The rest of the backup was already on this phone." : ".")
     }
 
     /// Erases readings, logbook, fingersticks, captures, exported files, the decision log and the
@@ -1141,6 +1184,7 @@ final class AppModel {
         sensor.clearCaptures()
         sensor.resetSignalStats()
         stores.deleteEverything()
+        archiveCache = nil
         engine.restoreLog([])
         readings = []
         logbook = []

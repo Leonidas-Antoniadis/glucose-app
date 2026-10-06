@@ -75,8 +75,60 @@ public struct SignalStats: Codable, Hashable, Sendable {
     public private(set) var outages: [Outage] = []
     /// When counting started (first install of this version, or after Delete all data).
     public private(set) var countingSince: Date?
+    /// When these stats were last saved, to close an outage the app couldn't follow (it was
+    /// killed or force-quit while the link was down).
+    public var savedAt: Date?
+    /// Times the app wasn't reading any sensor (the demo, between sensors): no packets are
+    /// expected then, and no gap is listed.
+    public private(set) var pauses: [Outage] = []
 
     public init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case hours, outages, countingSince, savedAt, pauses
+    }
+
+    /// Fields added later decode as empty, so saved stats survive an update.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        hours = try c.decodeIfPresent([Hour].self, forKey: .hours) ?? []
+        outages = try c.decodeIfPresent([Outage].self, forKey: .outages) ?? []
+        countingSince = try c.decodeIfPresent(Date.self, forKey: .countingSince)
+        savedAt = try c.decodeIfPresent(Date.self, forKey: .savedAt)
+        pauses = try c.decodeIfPresent([Outage].self, forKey: .pauses) ?? []
+    }
+
+    // MARK: Not reading
+
+    /// The app stopped reading a sensor (demo, or the sensor was forgotten). An open outage
+    /// ends here: it isn't a lost link any more.
+    public mutating func pauseCounting(at date: Date) {
+        endOpenOutage(at: date)
+        guard pauses.last.map({ $0.end != nil }) ?? true else { return }
+        pauses.append(Outage(start: date, end: nil, reason: .appPaused))
+        if pauses.count > 100 { pauses.removeFirst(pauses.count - 100) }
+    }
+
+    public mutating func resumeCounting(at date: Date) {
+        guard let index = pauses.indices.last, pauses[index].end == nil else { return }
+        pauses[index].end = max(pauses[index].start, date)
+    }
+
+    /// Whether most of `interval` falls in a time the app wasn't reading a sensor.
+    public func isNotReading(during interval: DateInterval, now: Date) -> Bool {
+        guard interval.duration > 0 else { return false }
+        let covered = pauses.reduce(0.0) { sum, pause in
+            sum + (pause.interval(now: now).intersection(with: interval)?.duration ?? 0)
+        }
+        return covered / interval.duration > 0.5
+    }
+
+    /// After a relaunch: an outage still open when the stats were last saved ends at that save.
+    /// What came after is the app not running, which the gap list shows as such.
+    public mutating func closeOutageLeftOpen() {
+        guard let savedAt, let index = outages.indices.last, outages[index].end == nil else { return }
+        outages[index].end = max(outages[index].start, savedAt)
+    }
 
     // MARK: Recording
 
@@ -140,6 +192,7 @@ public struct SignalStats: Codable, Hashable, Sendable {
         let cutoff = now.addingTimeInterval(-Self.keepDays * 86_400)
         hours.removeAll { $0.start < cutoff }
         outages.removeAll { ($0.end ?? now) < cutoff }
+        pauses.removeAll { ($0.end ?? now) < cutoff }
     }
 
     private mutating func update(at date: Date, _ change: (inout Hour) -> Void) {
@@ -174,7 +227,12 @@ public struct SignalStats: Codable, Hashable, Sendable {
         // Whole hours are counted, so the expected minutes start where the first counted hour does.
         let firstHour = Date(timeIntervalSince1970: (interval.start.timeIntervalSince1970 / 3600).rounded(.down) * 3600)
         let start = max(firstHour, countingSince ?? interval.end)
-        summary.minutes = max(0, interval.end.timeIntervalSince(start) / 60)
+        // No packets are expected while the app wasn't reading a sensor.
+        let counted = DateInterval(start: min(start, interval.end), end: interval.end)
+        let paused = pauses.reduce(0.0) { sum, pause in
+            sum + (pause.interval(now: interval.end).intersection(with: counted)?.duration ?? 0)
+        }
+        summary.minutes = max(0, (counted.duration - paused) / 60)
         return summary
     }
 

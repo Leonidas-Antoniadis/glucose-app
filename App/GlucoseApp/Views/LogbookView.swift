@@ -115,6 +115,7 @@ struct LogbookView: View {
             }
             .navigationTitle("Logbook")
             .sheet(item: $adding) { kind in AddLogEntryView(kind: kind) }
+            .onChange(of: model.lockCount) { adding = nil }
             .confirmationDialog("Delete this calibration?", isPresented: Binding(
                 get: { pendingCalibrationDelete != nil }, set: { if !$0 { pendingCalibrationDelete = nil } }
             ), titleVisibility: .visible) {

@@ -135,6 +135,9 @@ final class SensorConnection {
         saved = stores.savedCaptures.load() ?? []
         signal = stores.signalStats.load() ?? SignalStats()
         signal.prune(now: Date())
+        // An outage open when the app was killed ends at the last save; the rest is the app
+        // not running.
+        signal.closeOutageLeftOpen()
         ble.knownPeripheralID = record?.peripheralIdentifier
         ble.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
@@ -153,6 +156,7 @@ final class SensorConnection {
             return
         }
         if endIfExpired(notify: false) { return }
+        signal.resumeCounting(at: Date())
         status = ble.isPoweredOff ? .bluetoothOff : .searching
         ble.knownPeripheralID = record.peripheralIdentifier
         ble.expectedSerial = record.serial
@@ -164,7 +168,14 @@ final class SensorConnection {
     /// `pausing`: the app stops the connection to save battery while it's closed, which the
     /// signal report lists as the reason for the gap.
     func stop(pausing: Bool = false) {
-        if pausing, running, record != nil, status != .ended { signal.linkLost(at: Date(), reason: .appPaused) }
+        if running, record != nil, status != .ended {
+            if pausing {
+                signal.linkLost(at: Date(), reason: .appPaused)
+            } else {
+                // Not reading a sensor (the demo): no packets are expected, and it's no gap.
+                signal.pauseCounting(at: Date())
+            }
+        }
         running = false
         expiryTimer?.invalidate()
         ble.stop()
@@ -178,6 +189,7 @@ final class SensorConnection {
         guard force || Date().timeIntervalSince(signalSavedAt) > 600 else { return }
         signalSavedAt = Date()
         signal.prune(now: Date())
+        signal.savedAt = Date()
         try? stores.signalStats.save(signal)
     }
 
@@ -226,6 +238,9 @@ final class SensorConnection {
             history.markEnded(id: record.uid.hexString, at: Date(), reason: Date() >= record.expiresAt ? .expired : .removedEarly)
             saveHistory()
         }
+        // Until the next sensor is paired there's nothing to read.
+        signal.pauseCounting(at: Date())
+        saveSignal(force: true)
         ble.resetForNewSensor()
         expiryTimer?.invalidate()
         unconfirmedFailures = [:]
@@ -537,6 +552,7 @@ final class SensorConnection {
             status = .bluetoothOff
             if running, record != nil {
                 signal.linkLost(at: Date(), reason: .bluetoothOff)
+                saveSignal(force: true)
                 onEvent?(.bluetoothOff)
             }
         case .unauthorized:
@@ -563,7 +579,11 @@ final class SensorConnection {
                 linkDelivered = false
                 pendingReconnect = true
             }
-            if running, record != nil { signal.linkLost(at: Date(), reason: .linkLost) }
+            if running, record != nil {
+                signal.linkLost(at: Date(), reason: .linkLost)
+                // Saved now: if iOS kills the app during the outage, it still shows.
+                saveSignal(force: true)
+            }
         case .packet(let packet, let id):
             handlePacket(packet, from: id)
         case .rssi(let value):

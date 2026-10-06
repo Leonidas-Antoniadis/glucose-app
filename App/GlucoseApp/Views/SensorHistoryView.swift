@@ -5,6 +5,7 @@ import GlucoseCore
 /// The last 5 sensors with their IDs, for support calls.
 struct SensorHistoryView: View {
     @Environment(SensorConnection.self) private var sensor
+    @Environment(AppModel.self) private var model
     @State private var addingManual = false
 
     var body: some View {
@@ -42,6 +43,7 @@ struct SensorHistoryView: View {
                 Button("Add", systemImage: "plus") { addingManual = true }
             }
         }
+        .onChange(of: model.lockCount) { addingManual = false }
         .sheet(isPresented: $addingManual) {
             NavigationStack {
                 SensorHistoryDetailView(entry: SensorHistoryEntry(sensorType: "Libre 2 Plus (EU)", startedAt: Date(), pairedAt: Date()),

@@ -1,5 +1,6 @@
 import SwiftUI
 import GlucoseCore
+import LibreProtocol
 
 /// "Day 9 of 15" with a strip of the days: data captured, calibrations and the error that day.
 struct SensorWearSection: View {
@@ -192,8 +193,13 @@ struct SignalSections: View {
     }
 
     private func gapRows(window: DateInterval, recent: [GlucoseReading], now: Date) -> [GapRow] {
-        // Before a new sensor's first reading there's nothing to miss.
-        let start = max(window.start, (model.wearContext?.activatedAt ?? window.start).addingTimeInterval(3600))
+        // Before a new sensor's first reading there's nothing to miss, nor more than 8 hours before
+        // pairing (a sensor started with LibreLink): that's all a scan can bring back.
+        let pairedAt = sensor.record.flatMap { record in
+            sensor.history.entries.first { $0.id == record.uid.hexString }?.pairedAt
+        }
+        let start = max(window.start, (model.wearContext?.activatedAt ?? window.start).addingTimeInterval(3600),
+                        (pairedAt ?? window.start).addingTimeInterval(-8 * 3600))
         // After the sensor's end there's nothing to miss either.
         let end = model.isDemo ? now : min(now, model.wearContext?.expiresAt ?? now)
         guard start < end else { return [] }
@@ -222,8 +228,10 @@ struct SignalSections: View {
                           state: outage.end == nil ? .ongoing : filled ? .filled : .missing)
         }
         // Stretches without data that no outage explains: the app wasn't running.
+        // Time spent in the demo or between sensors isn't a gap either.
         for gap in SignalStats.dataGaps(in: recent, interval: span)
-        where !outages.contains(where: { $0.interval(now: end).intersects(gap) }) {
+        where !outages.contains(where: { $0.interval(now: end).intersects(gap) })
+            && !sensor.signal.isNotReading(during: gap, now: end) {
             let ongoing = end == now && now.timeIntervalSince(gap.end) < 60
             rows.append(GapRow(start: gap.start, end: ongoing ? nil : gap.end,
                                reason: "No data received: the app may not have been running, or the phone was off",

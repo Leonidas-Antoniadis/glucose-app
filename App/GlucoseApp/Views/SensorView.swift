@@ -132,6 +132,7 @@ struct SensorView: View {
         }
         .navigationTitle("Sensor")
         .sheet(isPresented: $showingFingerstick) { AddFingerstickView() }
+        .onChange(of: model.lockCount) { showingFingerstick = false }
         .confirmationDialog("Forget this sensor?", isPresented: $confirmForget, titleVisibility: .visible) {
             Button("Forget", role: .destructive) { sensor.forget() }
         } message: {

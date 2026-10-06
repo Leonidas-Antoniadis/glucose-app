@@ -34,6 +34,10 @@ struct HomeQuickLog: View {
             QuickDoseSheet(type: type) { entries, message in log(entries, message) }
         }
         .sheet(item: $fullForm) { kind in AddLogEntryView(kind: kind) }
+        .onChange(of: model.lockCount) {
+            doseSheet = nil
+            fullForm = nil
+        }
     }
 
     private func tap(_ kind: QuickLogKind) {

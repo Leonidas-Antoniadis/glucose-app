@@ -145,4 +145,34 @@ final class SignalStatsTests: XCTestCase {
         stats.recordPacket(at: at(40), unusable: false)
         XCTAssertEqual(stats.outages.last?.end, at(30), "a closed outage stays as it was")
     }
+
+    func testNotReadingTimeIsNeitherMissedNorAGap() {
+        var stats = SignalStats()
+        for minute in 0..<60 { stats.recordPacket(at: at(Double(minute)), unusable: false) }
+        stats.pauseCounting(at: at(60))   // switched to the demo for an hour
+        stats.resumeCounting(at: at(120))
+        for minute in 120..<180 { stats.recordPacket(at: at(Double(minute)), unusable: false) }
+        let summary = stats.summary(in: DateInterval(start: at(0), end: at(180)))
+        XCTAssertEqual(summary.minutes, 120, accuracy: 0.001, "the demo hour expects no packets")
+        XCTAssertEqual(summary.packetShare ?? 0, 1, accuracy: 0.001)
+        XCTAssertTrue(stats.isNotReading(during: DateInterval(start: at(65), end: at(110)), now: at(180)))
+        XCTAssertFalse(stats.isNotReading(during: DateInterval(start: at(10), end: at(50)), now: at(180)))
+    }
+
+    func testAnOutageLeftOpenEndsAtTheLastSave() throws {
+        var stats = SignalStats()
+        stats.recordPacket(at: at(0), unusable: false)
+        stats.linkLost(at: at(5), reason: .linkLost)
+        stats.savedAt = at(20)
+        // Saved and reloaded, as after the app was killed.
+        var reloaded = try JSONDecoder().decode(SignalStats.self, from: JSONEncoder().encode(stats))
+        reloaded.closeOutageLeftOpen()
+        XCTAssertEqual(reloaded.outages.last?.end, at(20))
+    }
+
+    func testStatsSavedBeforePausesExistedStillLoad() throws {
+        let old = Data(#"{"hours":[],"outages":[]}"#.utf8)
+        let stats = try JSONDecoder().decode(SignalStats.self, from: old)
+        XCTAssertTrue(stats.pauses.isEmpty)
+    }
 }

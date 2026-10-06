@@ -3,6 +3,9 @@ import UserNotifications
 import GlucoseCore
 
 /// Local notifications only. Nothing leaves the phone.
+/// On the main actor: `criticalAllowed` is written when the status is refreshed and read when an
+/// alert is delivered, and both must happen on one thread.
+@MainActor
 final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private let center = UNUserNotificationCenter.current()
     static let alertCategory = "GLUCOSE_ALERT"
@@ -268,12 +271,12 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // Show alerts even while the app is open.
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         completionHandler([.banner, .list, .sound])
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         if let idString = response.notification.request.content.userInfo["ruleID"] as? String,
            let id = UUID(uuidString: idString) {

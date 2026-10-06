@@ -63,13 +63,21 @@ public final class ReadingArchive: @unchecked Sendable {
     }
 
     /// Loads readings in the interval, deduplicated (live beats backfill) and sorted.
+    ///
+    /// Only reading the files holds the lock; decoding (seconds for 90 days) happens outside it,
+    /// so a new reading being appended on the main thread never waits for a long report. Throws
+    /// `CancellationError` when the calling task is cancelled.
     public func load(from start: Date, to end: Date) throws -> [GlucoseReading] {
-        lock.lock()
-        defer { lock.unlock() }
-        var readings: [GlucoseReading] = []
         // Never walk more than ~2 years of day files.
-        for url in dayFiles(from: max(start, end.addingTimeInterval(-730 * 86_400)), through: end) {
-            guard let data = try? Data(contentsOf: url) else { continue }
+        let urls = dayFiles(from: max(start, end.addingTimeInterval(-730 * 86_400)), through: end)
+        lock.lock()
+        let files = urls.compactMap { try? Data(contentsOf: $0) }
+        lock.unlock()
+
+        let decoder = JSONDecoder()
+        var readings: [GlucoseReading] = []
+        for data in files {
+            if Task.isCancelled { throw CancellationError() }
             for line in data.split(separator: 0x0A) where !line.isEmpty {
                 if let reading = try? decoder.decode(GlucoseReading.self, from: Data(line)),
                    reading.timestamp >= start, reading.timestamp <= end {
