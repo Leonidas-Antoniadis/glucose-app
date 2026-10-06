@@ -17,6 +17,9 @@ struct HomeView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             StatusBanners(now: context.date)
                             CurrentValueCard(now: context.date)
+                            if model.showsBedtimeCard(at: context.date) {
+                                BedtimeCard()
+                            }
                         }
                     }
                     HomeQuickLog(logged: $logged)

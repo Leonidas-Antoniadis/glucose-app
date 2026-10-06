@@ -383,6 +383,8 @@ final class AppModel {
             notifications.clearDeliveredMissingData()
         }
         updateSurfaces()
+        // With the app open the Home card shows the bedtime check instead.
+        if !isActive { notifyBedtimeProblemsIfNeeded() }
     }
 
     /// Pushes the newest reading to the widgets and the Live Activity.

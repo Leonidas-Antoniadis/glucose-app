@@ -51,6 +51,18 @@ struct SettingsView: View {
                     Text("Imported tunes can be chosen in any alert. iOS plays up to 30 seconds.")
                 }
 
+                Section {
+                    Toggle("Bedtime check", isOn: $model.settings.bedtimeCheck)
+                    if model.settings.bedtimeCheck {
+                        DatePicker("Bedtime", selection: bedtimeBinding, displayedComponents: .hourAndMinute)
+                    }
+                    NavigationLink("Check now") { BedtimeCheckView() }
+                } header: {
+                    Text("Night")
+                } footer: {
+                    Text("From an hour before bedtime, Home checks what could keep an alarm from sounding overnight: volume, battery, Bluetooth, the no-data alert, Silent mode, the sensor's end and the app build. With the app closed, a notification at bedtime lists anything that needs fixing.")
+                }
+
                 BatteryAndLockScreenSections()
 
                 Section("Privacy") {
@@ -98,6 +110,17 @@ struct SettingsView: View {
             } message: {
                 Text("Readings, notes, fingersticks and the sensor pairing are erased from this phone. Settings are kept.")
             }
+        }
+    }
+
+    /// Bedtime is stored as minutes after midnight; the picker wants a date.
+    private var bedtimeBinding: Binding<Date> {
+        Binding {
+            Calendar.current.date(bySettingHour: model.settings.bedtimeMinutes / 60, minute: model.settings.bedtimeMinutes % 60,
+                                  second: 0, of: Date()) ?? Date()
+        } set: { date in
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+            model.settings.bedtimeMinutes = (parts.hour ?? 22) * 60 + (parts.minute ?? 0)
         }
     }
 }

@@ -49,12 +49,17 @@ struct AppSettings: Codable, Hashable {
     var recordAllRawData = false
     /// Keep the sensor connection (and alerts) running while the app is closed. Off saves battery.
     var runInBackground = true
+    /// Check in the evening that nothing will keep an alarm from sounding overnight.
+    var bedtimeCheck = true
+    /// Bedtime, in minutes after midnight. The check shows from an hour before.
+    var bedtimeMinutes = 22 * 60
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case unit, ruleSet, missingData, dataSource, demoSpeed, onboardingDone, biometricLock
         case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData, runInBackground
+        case bedtimeCheck, bedtimeMinutes
     }
 
     init(from decoder: Decoder) throws {
@@ -74,5 +79,7 @@ struct AppSettings: Codable, Hashable {
         allowUnverifiedSensorTypes = try c.decodeIfPresent(Bool.self, forKey: .allowUnverifiedSensorTypes) ?? d.allowUnverifiedSensorTypes
         recordAllRawData = try c.decodeIfPresent(Bool.self, forKey: .recordAllRawData) ?? d.recordAllRawData
         runInBackground = try c.decodeIfPresent(Bool.self, forKey: .runInBackground) ?? d.runInBackground
+        bedtimeCheck = try c.decodeIfPresent(Bool.self, forKey: .bedtimeCheck) ?? d.bedtimeCheck
+        bedtimeMinutes = try c.decodeIfPresent(Int.self, forKey: .bedtimeMinutes) ?? d.bedtimeMinutes
     }
 }
