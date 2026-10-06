@@ -26,6 +26,11 @@ struct SensorView: View {
                 }
             }
 
+            SensorWearSection()
+            if (!model.isDemo && sensor.record != nil) || ScreenshotMode.isActive {
+                SignalSections()
+            }
+
             Section {
                 NavigationLink {
                     RawDataView()

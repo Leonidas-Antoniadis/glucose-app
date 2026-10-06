@@ -92,6 +92,9 @@ final class SensorConnection {
     private(set) var packets: [PacketRecord] = []
     private(set) var nfcRecords: [NFCRecord] = []
     private(set) var history: SensorHistory
+    /// Bluetooth link quality and outages, for the Sensor screen's signal report.
+    private(set) var signal = SignalStats()
+    @ObservationIgnored private var signalSavedAt = Date.distantPast
     /// A made-up sensor used in demo mode, so the inspector shows realistic bytes.
     private(set) var demoRecord: LibreSensorRecord?
     var allowUnverifiedTypes = false
@@ -126,6 +129,8 @@ final class SensorConnection {
         record = stores.sensor.load()
         history = stores.sensorHistory.load() ?? SensorHistory()
         saved = stores.savedCaptures.load() ?? []
+        signal = stores.signalStats.load() ?? SignalStats()
+        signal.prune(now: Date())
         ble.knownPeripheralID = record?.peripheralIdentifier
         ble.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
@@ -152,10 +157,30 @@ final class SensorConnection {
         scheduleExpiryCheck()
     }
 
-    func stop() {
+    /// `pausing`: the app stops the connection to save battery while it's closed, which the
+    /// signal report lists as the reason for the gap.
+    func stop(pausing: Bool = false) {
+        if pausing, running, record != nil { signal.linkLost(at: Date(), reason: .appPaused) }
         running = false
         expiryTimer?.invalidate()
         ble.stop()
+        saveSignal(force: true)
+    }
+
+    // MARK: Signal report
+
+    /// Saves the signal counters: right away when asked, otherwise at most every 10 minutes.
+    func saveSignal(force: Bool) {
+        guard force || Date().timeIntervalSince(signalSavedAt) > 600 else { return }
+        signalSavedAt = Date()
+        signal.prune(now: Date())
+        try? stores.signalStats.save(signal)
+    }
+
+    /// Starts the counting over, for "Delete all data".
+    func resetSignalStats() {
+        signal = SignalStats()
+        stores.signalStats.delete()
     }
 
     /// Call when the app comes to the foreground: catches a sensor that reached the end of its
@@ -398,6 +423,29 @@ final class SensorConnection {
         saveHistory()
     }
 
+    /// An example signal report for CI screenshots: a good day with one 30-minute drop at night.
+    /// Kept in memory only.
+    func seedSampleSignal(now: Date) {
+        var sample = SignalStats()
+        let start = now.addingTimeInterval(-24 * 3600)
+        let dropStart = now.addingTimeInterval(-10 * 3600)
+        var minute = start
+        while minute < now {
+            let inDrop = minute >= dropStart && minute < dropStart.addingTimeInterval(1800)
+            if !inDrop {
+                sample.recordPacket(at: minute, unusable: minute.timeIntervalSince(start) == 3 * 3600)
+                sample.recordRSSI(-66 - 6 * sin(minute.timeIntervalSince1970 / 5000), at: minute)
+            }
+            minute.addTimeInterval(60)
+        }
+        sample.linkLost(at: dropStart, reason: .linkLost)
+        sample.recordPacket(at: dropStart.addingTimeInterval(1800), unusable: false)
+        sample.recordReconnect(at: dropStart.addingTimeInterval(1790))
+        sample.recordReconnect(at: now.addingTimeInterval(-5 * 3600))
+        sample.recordCorruptPacket(at: now.addingTimeInterval(-3 * 3600))
+        signal = sample
+    }
+
     /// Example sensors for CI screenshots. Kept in memory only.
     func seedSampleHistory(now: Date) {
         let samples: [(serial: String, startDays: Double, endDays: Double?, reason: SensorHistoryEntry.EndReason?, note: String)] = [
@@ -479,7 +527,10 @@ final class SensorConnection {
             // An ended or missing sensor stays that way; Bluetooth doesn't matter then.
             guard status != .ended, status != .notPaired else { break }
             status = .bluetoothOff
-            if running, record != nil { onEvent?(.bluetoothOff) }
+            if running, record != nil {
+                signal.linkLost(at: Date(), reason: .bluetoothOff)
+                onEvent?(.bluetoothOff)
+            }
         case .unauthorized:
             status = .error("Bluetooth permission is off. Allow it in Settings.")
         case .scanning:
@@ -489,13 +540,17 @@ final class SensorConnection {
             if status != .connected { status = .connecting }
         case .connected(let id):
             log("Connected to \(id.uuidString.prefix(8))")
+            if record != nil { signal.recordReconnect(at: Date()) }
         case .disconnected:
             // A sensor at the end of its life stops sending and drops the link.
             if endIfExpired(notify: true) { break }
             log("Disconnected, waiting to reconnect")
             if status == .connected { status = .connecting }
+            if running, record != nil { signal.linkLost(at: Date(), reason: .linkLost) }
         case .packet(let packet, let id):
             handlePacket(packet, from: id)
+        case .rssi(let value):
+            signal.recordRSSI(Double(value), at: Date())
         case .log(let message):
             log(message)
         }
@@ -527,6 +582,7 @@ final class SensorConnection {
                                       error: "\(error)", isSimulated: false))
             if record.peripheralIdentifier == id {
                 log("Corrupt packet ignored: \(error)")
+                signal.recordCorruptPacket(at: Date())
             } else {
                 // One corrupt packet from our own sensor shouldn't lock it out: allow a few.
                 let failures = (unconfirmedFailures[id] ?? 0) + 1
@@ -571,6 +627,13 @@ final class SensorConnection {
             + record.glucoseReadings(from: parsed.trend, liveSource: .bluetooth)
         appendPacket(PacketRecord(date: Date(), encrypted: packet, decrypted: decrypted, packet: parsed, readings: readings,
                                   error: nil, isSimulated: false))
+        // The newest minute gave no reading although the sensor is past warm-up: an error flag or
+        // an impossible value.
+        let unusable = parsed.latest.map { latest in
+            latest.minuteIndex >= LibreSensorRecord.warmUpMinutes && !readings.contains { $0.minuteIndex == latest.minuteIndex }
+        } ?? false
+        signal.recordPacket(at: Date(), unusable: unusable)
+        saveSignal(force: false)
 
         if parsed.ageMinutes >= record.maxLifeMinutes {
             status = .ended

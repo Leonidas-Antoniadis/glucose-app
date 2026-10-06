@@ -24,6 +24,8 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         case connected(UUID)
         case disconnected(UUID)
         case packet([UInt8], UUID)
+        /// Signal strength of the connected sensor, in dBm.
+        case rssi(Int)
         case log(String)
     }
 
@@ -317,6 +319,13 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             let packet = Array(buffer.prefix(Self.packetSize))
             buffer = []
             onEvent?(.packet(packet, peripheral.identifier))
+            // Once a minute is plenty for the signal report.
+            peripheral.readRSSI()
         }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        guard error == nil else { return }
+        onEvent?(.rssi(RSSI.intValue))
     }
 }

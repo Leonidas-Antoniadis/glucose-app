@@ -16,6 +16,8 @@ struct AppStores {
     let alertState: JSONFileStore<AlertEngine.Snapshot>
     /// The alert decision log, kept apart from the alert state so it survives a change of data source.
     let decisionLog: JSONFileStore<[String]>
+    /// Bluetooth link quality per hour and its outages, for the signal report.
+    let signalStats: JSONFileStore<SignalStats>
     let archive: ReadingArchive?
     let capturesURL: URL
 
@@ -37,6 +39,7 @@ struct AppStores {
         savedCaptures = JSONFileStore(url: directory.appendingPathComponent("saved-captures.json"))
         alertState = JSONFileStore(url: directory.appendingPathComponent("alert-state.json"))
         decisionLog = JSONFileStore(url: directory.appendingPathComponent("decision-log.json"))
+        signalStats = JSONFileStore(url: directory.appendingPathComponent("signal-stats.json"))
         archive = try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
         capturesURL = directory.appendingPathComponent("captures.log")
 
@@ -85,6 +88,7 @@ struct AppStores {
         savedCaptures.delete()
         alertState.delete()
         decisionLog.delete()
+        signalStats.delete()
         try? FileManager.default.removeItem(at: capturesURL)
         Self.clearExports()
     }

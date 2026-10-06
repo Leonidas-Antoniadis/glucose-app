@@ -266,6 +266,7 @@ final class AppModel {
         guard let end = readings.last?.timestamp else { return }
         func ago(_ minutes: Double) -> Date { end.addingTimeInterval(-minutes * 60) }
         sensor.seedSampleHistory(now: end)
+        sensor.seedSampleSignal(now: end)
         if sensor.saved.isEmpty, let packet = sensor.packets.first {
             sensor.keep(packet, reason: "Saved by you (example)")
         }
@@ -790,6 +791,54 @@ final class AppModel {
         }.value
     }
 
+    /// The sensor whose wear the Sensor screen shows.
+    struct WearContext: Equatable {
+        var serial: String
+        var activatedAt: Date
+        var lifetimeDays: Int
+        /// The sensor minute at `activatedAt`: 0, except for the demo's endless sensor.
+        var firstMinute: Int
+
+        var expiresAt: Date { activatedAt.addingTimeInterval(Double(lifetimeDays) * 86_400) }
+        func day(at date: Date) -> Int { Int(date.timeIntervalSince(activatedAt) / 86_400) + 1 }
+    }
+
+    var wearContext: WearContext? {
+        if isDemo {
+            // The demo sensor has run for weeks: show it as if it were on day 9 of 15.
+            guard let latest = readings.last else { return nil }
+            let first = max(0, latest.minuteIndex - 8 * 1440 - 600)
+            return WearContext(serial: latest.sensorSerial,
+                               activatedAt: latest.timestamp.addingTimeInterval(-Double(latest.minuteIndex - first) * 60),
+                               lifetimeDays: 15, firstMinute: first)
+        }
+        guard let record = sensor.record else { return nil }
+        return WearContext(serial: record.serial, activatedAt: record.activatedAt,
+                           lifetimeDays: Int((Double(record.maxLifeMinutes) / 1440).rounded(.up)), firstMinute: 0)
+    }
+
+    /// Coverage, calibrations and accuracy for each day of the current sensor's wear. Days older
+    /// than the readings in memory come from the archive, off the main thread.
+    func wearDays() async -> [SensorWearDay] {
+        guard let context = wearContext else { return [] }
+        let accuracy = await fullAccuracyReport()
+        let inMemory = readings
+        let sticks = fingersticks
+        let archive = isDemo ? nil : stores.archive
+        let needsArchive = context.activatedAt < (inMemory.first?.timestamp ?? .distantFuture)
+        return await Task.detached(priority: .userInitiated) {
+            var all = inMemory
+            if needsArchive, let archive {
+                let first = inMemory.first?.timestamp ?? Date()
+                let older = (try? archive.load(from: context.activatedAt, to: first)) ?? []
+                all = older.filter { $0.timestamp < first } + inMemory
+            }
+            return SensorWear.days(readings: all, sensorSerial: context.serial, activatedAt: context.activatedAt,
+                                   lifetimeDays: context.lifetimeDays, fingersticks: sticks, accuracy: accuracy,
+                                   now: max(Date(), inMemory.last?.timestamp ?? Date()), firstMinute: context.firstMinute)
+        }.value
+    }
+
     /// Deletes readings, notes, fingersticks and raw captures older than `archiveDays`.
     /// Runs at launch and then once a day while readings arrive.
     func pruneOldData() {
@@ -863,9 +912,11 @@ final class AppModel {
             if !settings.runInBackground, started, !isDemo {
                 // Saves battery: no Bluetooth while closed, so no alerts and no stale Lock Screen value.
                 pausedInBackground = true
-                sensor.stop()
+                sensor.stop(pausing: true)
                 notifications.cancelMissingData()
                 surfaces.endLiveActivity()
+            } else {
+                sensor.saveSignal(force: true)
             }
         default:
             break
@@ -964,6 +1015,7 @@ final class AppModel {
     func deleteAllData() {
         sensor.forget()
         sensor.clearCaptures()
+        sensor.resetSignalStats()
         stores.deleteEverything()
         engine.restoreLog([])
         readings = []

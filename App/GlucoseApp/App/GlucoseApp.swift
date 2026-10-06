@@ -47,7 +47,7 @@ enum ScreenshotMode {
     static let isActive = arguments.contains("-screenshots")
     static let showsOnboarding = arguments.contains("-onboarding")
 
-    /// `-screen NAME` opens a single screen (sensor, raw, packet, nfc, history, rule, add, battery, accuracy).
+    /// `-screen NAME` opens a single screen (sensor, raw, packet, nfc, history, rule, add, battery, accuracy, wear).
     static var screen: String? {
         guard isActive, let index = arguments.firstIndex(of: "-screen"), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
@@ -140,6 +140,12 @@ struct ScreenshotScreen: View {
                 QuickDoseSheet(type: .rapid) { _, _ in }
             case "accuracy":
                 AccuracyView()
+            case "wear":
+                List {
+                    SensorWearSection()
+                    SignalSections()
+                }
+                .navigationTitle("Sensor")
             default:
                 MainTabs()
             }
