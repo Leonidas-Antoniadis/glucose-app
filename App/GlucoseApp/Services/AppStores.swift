@@ -34,7 +34,7 @@ struct AppStores {
         sensor = JSONFileStore(url: directory.appendingPathComponent("sensor.json"))
         logbook = JSONFileStore(url: directory.appendingPathComponent("logbook.json"))
         fingersticks = JSONFileStore(url: directory.appendingPathComponent("fingersticks.json"))
-        // Serials and notes for support calls; erased by "Delete all data" too.
+        // Serials and notes for support calls: never deleted, not even by "Delete all data".
         sensorHistory = JSONFileStore(url: directory.appendingPathComponent("sensor-history.json"))
         savedCaptures = JSONFileStore(url: directory.appendingPathComponent("saved-captures.json"))
         alertState = JSONFileStore(url: directory.appendingPathComponent("alert-state.json"))

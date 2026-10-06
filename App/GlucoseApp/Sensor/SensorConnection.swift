@@ -446,12 +446,6 @@ final class SensorConnection {
         saveHistory()
     }
 
-    /// Erases the sensor history, for "Delete all data".
-    func clearHistory() {
-        history = SensorHistory()
-        stores.sensorHistory.delete()
-    }
-
     /// An example signal report for CI screenshots: a good day with one 30-minute drop at night.
     /// Kept in memory only.
     func seedSampleSignal(now: Date) {

@@ -1201,7 +1201,6 @@ final class AppModel {
         sensor.forget()
         sensor.clearCaptures()
         sensor.resetSignalStats()
-        sensor.clearHistory()
         stores.deleteEverything()
         archiveCache = nil
         engine.restoreLog([])
