@@ -181,6 +181,8 @@ struct AddLogEntryView: View {
     @State private var kind: QuickLogKind
     @State private var date = Date()
     @State private var amountText = ""
+    /// What LibreLink showed at the same moment, for the accuracy comparison.
+    @State private var libreLinkText = ""
     @State private var minutes = 30
     @State private var text = ""
     @State private var calibrate = false
@@ -213,6 +215,12 @@ struct AddLogEntryView: View {
                             TextField("0", text: $amountText).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                         }
                         Toggle("Use to calibrate the sensor", isOn: $calibrate)
+                        if !calibrate {
+                            LabeledContent("LibreLink showed") {
+                                TextField("optional", text: $libreLinkText)
+                                    .keyboardType(.decimalPad).multilineTextAlignment(.trailing)
+                            }
+                        }
                     case .note:
                         EmptyView()
                     }
@@ -224,7 +232,7 @@ struct AddLogEntryView: View {
                     }
                 } else {
                     Section {
-                        Text("Calibrate only when glucose is steady (flat arrow). Blood glucose values you don't use for calibration measure the sensor's accuracy instead.")
+                        Text("Calibrate only when glucose is steady (flat arrow). Blood glucose values you don't use for calibration measure the sensor's accuracy instead. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -251,7 +259,10 @@ struct AddLogEntryView: View {
     private var isValid: Bool {
         switch kind {
         case .fastInsulin, .slowInsulin: return (amount ?? 0) > 0 && (amount ?? 0) <= 100
-        case .bloodGlucose: return model.unit.parse(amountText).map { (20...600).contains($0) } ?? false
+        case .bloodGlucose:
+            let libreLinkValid = libreLinkText.trimmingCharacters(in: .whitespaces).isEmpty
+                || model.unit.parse(libreLinkText).map { (20...600).contains($0) } ?? false
+            return libreLinkValid && model.unit.parse(amountText).map { (20...600).contains($0) } ?? false
         case .food: return amountText.isEmpty || (0...1000).contains(amount ?? -1)
         case .exercise, .note: return true
         }
@@ -261,8 +272,10 @@ struct AddLogEntryView: View {
         switch kind {
         case .bloodGlucose:
             guard let mgdL = model.unit.parse(amountText) else { return }
-            result = model.addFingerstick(mgdL: mgdL, date: date, calibrate: calibrate)
+            result = model.addFingerstick(mgdL: mgdL, date: date, calibrate: calibrate,
+                                          libreLinkMgdL: calibrate ? nil : model.unit.parse(libreLinkText))
             amountText = ""
+            libreLinkText = ""
             return
         case .fastInsulin:
             model.addLogEntry(LogEntry(date: date, kind: .insulin(units: amount ?? 0, type: .rapid), text: text))

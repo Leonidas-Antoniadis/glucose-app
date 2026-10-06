@@ -282,6 +282,18 @@ final class AppModel {
             FingerstickEntry(date: ago(60), mgdL: (readings(lastHours: 1.1).first?.mgdL ?? 110) + 6, usedForCalibration: false),
             FingerstickEntry(date: ago(480), mgdL: 124, usedForCalibration: true),
         ]
+        // Two checks a day over the last 12 days, a few percent off the demo curve, for the
+        // accuracy screenshots. Every other one has a LibreLink value too.
+        for index in 0..<24 {
+            let date = ago(Double(index / 2) * 1440 + (index.isMultiple(of: 2) ? 1500 : 2100))
+            guard let nearest = readings.min(by: { abs($0.timestamp.timeIntervalSince(date)) < abs($1.timestamp.timeIntervalSince(date)) })
+            else { continue }
+            let meter = (nearest.mgdL * (1 + 0.1 * sin(Double(index) * 1.7))).rounded()
+            let libreLink = index.isMultiple(of: 2) ? (nearest.mgdL * (1 + 0.06 * cos(Double(index)))).rounded() : nil
+            fingersticks.append(FingerstickEntry(date: nearest.timestamp, mgdL: meter, usedForCalibration: false,
+                                                 libreLinkMgdL: libreLink))
+        }
+        fingersticks.sort { $0.date > $1.date }
         let rules = settings.ruleSet.rules
         if let low = rules.first(where: { $0.name == "Lower" }), let high = rules.first(where: { $0.name == "High" }) {
             recentEvents = [
@@ -677,14 +689,15 @@ final class AppModel {
 
     /// Records a fingerstick. Returns a message describing what happened.
     @discardableResult
-    func addFingerstick(mgdL: Double, date: Date, calibrate: Bool) -> String {
+    func addFingerstick(mgdL: Double, date: Date, calibrate: Bool, libreLinkMgdL: Double? = nil) -> String {
         var pointID: UUID?
         var message = "Fingerstick saved."
         if calibrate {
             message = calibrateSensor(mgdL: mgdL, date: date, pointID: &pointID)
         }
         fingersticks.append(FingerstickEntry(date: date, mgdL: mgdL, usedForCalibration: pointID != nil,
-                                             sensorSerial: sensor.record?.serial, calibrationPointID: pointID))
+                                             sensorSerial: sensor.record?.serial, calibrationPointID: pointID,
+                                             libreLinkMgdL: libreLinkMgdL))
         fingersticks.sort { $0.date > $1.date }
         try? stores.fingersticks.save(fingersticks)
         return message
@@ -754,7 +767,27 @@ final class AppModel {
     /// Empty in the demo: comparing real fingersticks with a made-up curve would show a
     /// meaningless MARD.
     var accuracy: AccuracyReport {
-        isDemo ? AccuracyReport(fingersticks: [], readings: []) : AccuracyReport(fingersticks: fingersticks, readings: readings)
+        isDemo && !ScreenshotMode.isActive ? AccuracyReport(pairs: []) : AccuracyReport(fingersticks: fingersticks, readings: readings)
+    }
+
+    /// The accuracy report over every fingerstick on file (91 days), not just the 14 days of
+    /// readings in memory. Older readings come from the archive, off the main thread.
+    func fullAccuracyReport() async -> AccuracyReport {
+        guard !isDemo || ScreenshotMode.isActive else { return AccuracyReport(pairs: []) }
+        let sticks = fingersticks.filter { !$0.usedForCalibration }
+        let inMemory = readings
+        guard let oldest = sticks.map(\.date).min() else { return AccuracyReport(pairs: []) }
+        let archive = stores.archive
+        let needsArchive = oldest < (inMemory.first?.timestamp ?? .distantFuture)
+        return await Task.detached(priority: .userInitiated) {
+            var all = inMemory
+            if needsArchive, let archive {
+                let first = inMemory.first?.timestamp ?? Date()
+                let older = (try? archive.load(from: oldest.addingTimeInterval(-20 * 60), to: first)) ?? []
+                all = older.filter { $0.timestamp < first } + inMemory
+            }
+            return AccuracyReport(fingersticks: sticks, readings: all)
+        }.value
     }
 
     /// Deletes readings, notes, fingersticks and raw captures older than `archiveDays`.

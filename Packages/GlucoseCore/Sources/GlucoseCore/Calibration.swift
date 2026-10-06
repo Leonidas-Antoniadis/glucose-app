@@ -108,15 +108,18 @@ public struct FingerstickEntry: Codable, Hashable, Identifiable, Sendable {
     public var sensorSerial: String?
     /// The calibration point this fingerstick added, so deleting it can undo the calibration.
     public var calibrationPointID: UUID?
+    /// What LibreLink (or the reader) showed at the same moment, if typed in, to compare accuracy.
+    public var libreLinkMgdL: Double?
 
     public init(id: UUID = UUID(), date: Date, mgdL: Double, usedForCalibration: Bool, sensorSerial: String? = nil,
-                calibrationPointID: UUID? = nil) {
+                calibrationPointID: UUID? = nil, libreLinkMgdL: Double? = nil) {
         self.id = id
         self.date = date
         self.mgdL = mgdL
         self.usedForCalibration = usedForCalibration
         self.sensorSerial = sensorSerial
         self.calibrationPointID = calibrationPointID
+        self.libreLinkMgdL = libreLinkMgdL
     }
 }
 
@@ -128,50 +131,4 @@ public enum CalibrationOutcome: Equatable, Sendable {
     case warmingUp
     /// Far from what the sensor shows (`sensorMgdL`). Not used until a second fingerstick agrees.
     case needsConfirmation(sensorMgdL: Double)
-}
-
-/// Sensor accuracy against fingersticks that were *not* used for calibration.
-public struct AccuracyReport: Hashable, Sendable {
-    public struct Pair: Hashable, Sendable {
-        public let date: Date
-        public let referenceMgdL: Double
-        public let sensorMgdL: Double
-
-        public var absoluteRelativeDifference: Double {
-            abs(sensorMgdL - referenceMgdL) / referenceMgdL
-        }
-
-        /// ISO 15197-style band: within 15 mg/dL below 100 mg/dL, within 15% at or above.
-        public var isWithin15_15: Bool {
-            referenceMgdL < 100 ? abs(sensorMgdL - referenceMgdL) <= 15 : absoluteRelativeDifference <= 0.15
-        }
-    }
-
-    public let pairs: [Pair]
-
-    /// Mean absolute relative difference, in percent.
-    public var mard: Double? {
-        guard !pairs.isEmpty else { return nil }
-        return pairs.map(\.absoluteRelativeDifference).reduce(0, +) / Double(pairs.count) * 100
-    }
-
-    public var within15_15: Double? {
-        guard !pairs.isEmpty else { return nil }
-        return Double(pairs.filter(\.isWithin15_15).count) / Double(pairs.count)
-    }
-
-    /// Matches each fingerstick with the closest sensor reading within `maxGapMinutes`.
-    public init(fingersticks: [FingerstickEntry], readings: [GlucoseReading], maxGapMinutes: Double = 5,
-                includeCalibrationPoints: Bool = false) {
-        let sorted = readings.sorted { $0.timestamp < $1.timestamp }
-        pairs = fingersticks
-            .filter { includeCalibrationPoints || !$0.usedForCalibration }
-            .compactMap { stick in
-                let closest = sorted.min {
-                    abs($0.timestamp.timeIntervalSince(stick.date)) < abs($1.timestamp.timeIntervalSince(stick.date))
-                }
-                guard let closest, abs(closest.timestamp.timeIntervalSince(stick.date)) <= maxGapMinutes * 60 else { return nil }
-                return Pair(date: stick.date, referenceMgdL: stick.mgdL, sensorMgdL: closest.mgdL)
-            }
-    }
 }

@@ -85,8 +85,9 @@ struct SensorView: View {
             Section("Accuracy") {
                 let report = model.accuracy
                 if let mard = report.mard, let within = report.within15_15 {
-                    MetricRow(label: "MARD", value: String(format: "%.1f %%", mard), warning: mard > 15)
-                    MetricRow(label: "Within 15 mg/dL or 15%", value: String(format: "%.0f %%", within * 100))
+                    MetricRow(label: "MARD (last 14 days)", value: String(format: "%.1f %%", mard), warning: mard > 15)
+                    MetricRow(label: "Within \(model.unit.format(mgdL: 15, includeSymbol: true)) or 15%",
+                              value: String(format: "%.0f %%", within * 100))
                     MetricRow(label: "Comparisons", value: "\(report.pairs.count)")
                 } else if model.isDemo {
                     Text("Accuracy is measured against your own sensor, so it isn't shown for the demo.")
@@ -94,6 +95,11 @@ struct SensorView: View {
                 } else {
                     Text("Add fingersticks without \"Use to calibrate\" to measure accuracy.")
                         .foregroundStyle(.secondary)
+                }
+                NavigationLink {
+                    AccuracyView()
+                } label: {
+                    Label("Accuracy details", systemImage: "scope")
                 }
             }
 
