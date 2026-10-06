@@ -95,8 +95,8 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
     /// Converts raw sensor readings into glucose readings, skipping warm-up and error values.
     public func glucoseReadings(from raws: [LibreRawReading], liveSource: GlucoseReading.Source) -> [GlucoseReading] {
         raws.compactMap { raw in
-            guard !raw.hasError, raw.minuteIndex >= Self.warmUpMinutes, raw.minuteIndex <= maxLifeMinutes else { return nil }
-            let mgdL = calibration.mgdL(fromRaw: Double(raw.raw)).rounded()
+            guard !raw.hasError, raw.minuteIndex >= Self.warmUpMinutes, raw.minuteIndex <= maxLifeMinutes,
+                  let mgdL = ReadingPipeline.clamped(calibration.mgdL(fromRaw: Double(raw.raw)).rounded()) else { return nil }
             return GlucoseReading(
                 sensorSerial: serial,
                 minuteIndex: raw.minuteIndex,

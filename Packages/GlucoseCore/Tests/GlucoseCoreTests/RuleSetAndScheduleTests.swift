@@ -32,6 +32,27 @@ final class RuleSetAndScheduleTests: XCTestCase {
         XCTAssertTrue(issues.contains(.noUrgentLow))
     }
 
+    func testNightOnlyUrgentLowDoesNotCountAsSafeguard() throws {
+        let set = try AlertRuleSet(rules: [
+            AlertRule(name: "Lower", direction: .low, thresholdMgdL: 70, sound: .silent),
+            AlertRule(name: "Urgent", direction: .low, thresholdMgdL: 55, sound: .silent, schedule: .nightOnly),
+        ])
+        XCTAssertTrue(set.urgentLowRules.isEmpty)
+        XCTAssertTrue(set.validate().contains(.noUrgentLow))
+    }
+
+    func testApplyingAPresetKeepsTrendAlertsAndRuleIDs() {
+        var current = AlertRuleSet.basic()
+        current.trendAlerts[1].isEnabled = true   // Falling fast
+        let night = current.applyingPreset(.night())
+        XCTAssertEqual(night.trendAlerts, current.trendAlerts)
+        XCTAssertEqual(night.rules.map(\.name), AlertRuleSet.night().rules.map(\.name))
+        let urgentID = current.rules.first { $0.name == "Urgent low" }?.id
+        XCTAssertEqual(night.rules.first { $0.name == "Urgent low" }?.id, urgentID)
+        XCTAssertEqual(current.applyingPreset(.basic()).rules.map(\.id), current.rules.map(\.id),
+                       "re-applying the same preset keeps every id")
+    }
+
     func testPresetsAreValid() {
         for preset in [AlertRuleSet.basic(), .night(), .sensitive()] {
             XCTAssertEqual(preset.validate(), [], "preset should have no warnings")

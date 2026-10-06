@@ -5,8 +5,11 @@ import ActivityKit
 enum GlucoseShared {
     static let appGroup = "group.com.leonidasantoniadis.glucoseapp"
 
+    /// Same rules as `GlucoseUnit.formatReading`: LO at 39 mg/dL or below, HI at 501 or above.
     static func format(mgdL: Double, unitRaw: String) -> String {
-        unitRaw == "mmolL" ? String(format: "%.1f", mgdL / 18.016) : String(Int(mgdL.rounded()))
+        if mgdL <= 39 { return "LO" }
+        if mgdL >= 501 { return "HI" }
+        return unitRaw == "mmolL" ? String(format: "%.1f", mgdL / 18.016) : String(Int(mgdL.rounded()))
     }
 
     static func unitSymbol(_ unitRaw: String) -> String {

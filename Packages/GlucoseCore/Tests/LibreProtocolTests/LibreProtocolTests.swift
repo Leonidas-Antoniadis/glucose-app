@@ -227,4 +227,14 @@ final class LibreProtocolTests: XCTestCase {
         record.addCalibration(referenceMgdL: 130, raw: 1020, date: now)
         XCTAssertEqual(record.glucoseReadings(from: [raws[0]], liveSource: .bluetooth).first?.mgdL, 130)
     }
+
+    func testDeepLowIsKeptAsLO() {
+        let now = Date(timeIntervalSince1970: 1_767_614_400)
+        let record = LibreSensorRecord(uid: LibreFixtures.uid, patchInfo: LibreFixtures.patchInfo,
+                                       ageMinutes: 100, maxLifeMinutes: 0, now: now)
+        let deep = LibreRawReading(minuteIndex: 100, raw: 100, rawTemperature: 0, temperatureAdjustment: 0,
+                                   hasError: false, isHistory: false)
+        // 100 / 8.5 = 12 mg/dL: kept as LO (39) so urgent-low alerts keep repeating.
+        XCTAssertEqual(record.glucoseReadings(from: [deep], liveSource: .bluetooth).map(\.mgdL), [39])
+    }
 }

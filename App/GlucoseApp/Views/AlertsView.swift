@@ -84,9 +84,9 @@ struct AlertsView: View {
                 }
 
                 Section("Presets") {
-                    Button("Basic (80 / 70 / 60, 180 / 220 / 250)") { model.updateRules { $0 = .basic() } }
-                    Button("Night") { model.updateRules { $0 = .night() } }
-                    Button("Sensitive") { model.updateRules { $0 = .sensitive() } }
+                    Button("Basic (80 / 70 / 60, 180 / 220 / 250)") { model.updateRules { $0 = $0.applyingPreset(.basic()) } }
+                    Button("Night") { model.updateRules { $0 = $0.applyingPreset(.night()) } }
+                    Button("Sensitive") { model.updateRules { $0 = $0.applyingPreset(.sensitive()) } }
                 }
             }
             .navigationTitle("Alerts")
@@ -315,10 +315,10 @@ struct RuleEditorView: View {
                 Button("Save") { save() }
             }
         }
-        .confirmationDialog("Turn off your last urgent-low alert?", isPresented: $confirmDisable, titleVisibility: .visible) {
+        .confirmationDialog("Change your last all-day urgent-low alert?", isPresented: $confirmDisable, titleVisibility: .visible) {
             Button("Save anyway", role: .destructive) { commit() }
         } message: {
-            Text("Without an alert at or below \(unit.format(mgdL: AlertRuleSet.urgentLowMgdL, includeSymbol: true)), a dangerous low could go unnoticed.")
+            Text("Without an alert at or below \(unit.format(mgdL: AlertRuleSet.urgentLowMgdL, includeSymbol: true)) that is on all day, a dangerous low could go unnoticed.")
         }
         .onDisappear { SoundPreviewPlayer.shared.stop() }
     }
@@ -326,7 +326,7 @@ struct RuleEditorView: View {
     private func save() {
         let urgent = model.settings.ruleSet.urgentLowRules
         let losesSafeguard = urgent.count == 1 && urgent.first?.id == rule.id
-            && (!rule.isEnabled || rule.thresholdMgdL > AlertRuleSet.urgentLowMgdL)
+            && (!rule.isEnabled || rule.thresholdMgdL > AlertRuleSet.urgentLowMgdL || rule.schedule != .always)
         if losesSafeguard {
             confirmDisable = true
         } else {

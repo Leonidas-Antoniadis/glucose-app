@@ -12,6 +12,8 @@ struct AppStores {
     let fingersticks: JSONFileStore<[FingerstickEntry]>
     let sensorHistory: JSONFileStore<SensorHistory>
     let savedCaptures: JSONFileStore<[SavedCapture]>
+    /// The alert engine's memory (snoozes, repeats, decision log), so a relaunch doesn't reset it.
+    let alertState: JSONFileStore<AlertEngine.Snapshot>
     let archive: ReadingArchive?
     let capturesURL: URL
 
@@ -31,7 +33,8 @@ struct AppStores {
         // Kept on "Delete all data", since it's what support asks for.
         sensorHistory = JSONFileStore(url: directory.appendingPathComponent("sensor-history.json"))
         savedCaptures = JSONFileStore(url: directory.appendingPathComponent("saved-captures.json"))
-        archive = try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
+        alertState = JSONFileStore(url: directory.appendingPathComponent("alert-state.json"))
+        archive =try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
         capturesURL = directory.appendingPathComponent("captures.log")
 
         // Version 0.1 kept settings directly in Application Support.
@@ -77,6 +80,7 @@ struct AppStores {
         logbook.delete()
         fingersticks.delete()
         savedCaptures.delete()
+        alertState.delete()
         try? FileManager.default.removeItem(at: capturesURL)
     }
 }

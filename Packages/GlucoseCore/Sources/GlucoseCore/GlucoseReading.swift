@@ -30,6 +30,11 @@ public struct GlucoseReading: Codable, Hashable, Sendable, Identifiable {
         self.raw = raw
     }
 
+    /// Shown as LO: the sensor's value was at or below `ReadingPipeline.lowMgdL`.
+    public var isBelowRange: Bool { mgdL <= ReadingPipeline.lowMgdL }
+    /// Shown as HI: the sensor's value was at or above `ReadingPipeline.highMgdL`.
+    public var isAboveRange: Bool { mgdL >= ReadingPipeline.highMgdL }
+
     /// The same reading with another timestamp.
     public func retimed(to timestamp: Date) -> GlucoseReading {
         GlucoseReading(sensorSerial: sensorSerial, minuteIndex: minuteIndex, timestamp: timestamp, mgdL: mgdL,
@@ -38,11 +43,23 @@ public struct GlucoseReading: Codable, Hashable, Sendable, Identifiable {
 }
 
 public enum ReadingPipeline {
-    /// Values outside this range are treated as sensor errors, not glucose.
-    public static let plausibleRangeMgdL: ClosedRange<Double> = 20...600
+    /// Values below this are stored as this value and shown as LO, like Abbott's devices do.
+    public static let lowMgdL: Double = 39
+    /// Values above this are stored as this value and shown as HI.
+    public static let highMgdL: Double = 501
+    /// Anything outside this range is not glucose (a broken value), so it is dropped.
+    public static let plausibleRangeMgdL: ClosedRange<Double> = 1...1000
 
     public static func isPlausible(_ reading: GlucoseReading) -> Bool {
         reading.mgdL.isFinite && plausibleRangeMgdL.contains(reading.mgdL)
+    }
+
+    /// A computed glucose value clamped to LO...HI, or nil if it isn't a number at all.
+    /// A very low value must still reach the alerts: dropping it would stop urgent-low repeats
+    /// exactly when glucose is lowest.
+    public static func clamped(_ mgdL: Double) -> Double? {
+        guard mgdL.isFinite else { return nil }
+        return min(max(mgdL, lowMgdL), highMgdL)
     }
 
     /// Merges new readings into an existing series: drops implausible values,

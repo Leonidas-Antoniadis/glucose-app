@@ -188,7 +188,7 @@ struct SelectionCallout: View {
                 Circle()
                     .fill(RangeColor.color(for: reading.mgdL))
                     .frame(width: 8, height: 8)
-                Text(unit.format(mgdL: reading.mgdL, includeSymbol: true))
+                Text(unit.formatReading(mgdL: reading.mgdL, includeSymbol: true))
                     .font(.callout.bold())
                     .foregroundStyle(.primary)
             }

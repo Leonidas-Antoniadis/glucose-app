@@ -30,16 +30,42 @@ final class TrendAlertTests: XCTestCase {
     }
 
     func testPredictiveLowIsSuppressedWhileAThresholdLowIsActive() throws {
-        let low = AlertRule(name: "L80", direction: .low, thresholdMgdL: 80, sound: .silent, repeatIntervalMinutes: nil)
+        let low = AlertRule(name: "L80", direction: .low, thresholdMgdL: 80, sound: .tune(name: "alarm_loud_low"),
+                            repeatIntervalMinutes: nil)
         var e = try engine(rules: [low], trend: [lowSoon])
         // Already below 80 and falling: only the threshold rule speaks.
-        let fired = run(&e, [79, 77, 75, 73, 71])
+        let fired = run(&e, (0..<14).map { 79 - Double($0) * 0.5 })
         XCTAssertEqual(fired.flatMap { $0 }, ["L80"])
+    }
+
+    func testSilentLowRuleDoesNotSuppressLowSoon() throws {
+        // Basic preset's silent "Low" at 80 used to swallow "Low soon" on slow drops.
+        let silent = AlertRule(name: "Low", direction: .low, thresholdMgdL: 80, sound: .silent, repeatIntervalMinutes: nil)
+        var e = try engine(rules: [silent], trend: [lowSoon])
+        let fired = run(&e, (0..<40).map { 90 - Double($0) * 0.6 })
+        XCTAssertTrue(fired.flatMap { $0 }.contains("Low soon"))
+    }
+
+    func testTrendAlertsNeedTenMinutesOfReadings() throws {
+        let falling = TrendAlert(name: "Falling", kind: .fallingFast(mgdLPerMinute: 2), sound: .silent)
+        var e = try engine(trend: [lowSoon, falling])
+        // Three noisy values right after a launch (91, 90, 87) are not a trend.
+        XCTAssertTrue(run(&e, [91, 90, 87]).flatMap { $0 }.isEmpty)
+    }
+
+    func testHistoryGivesTrendAlertsContext() throws {
+        var e = try engine(trend: [lowSoon])
+        // 15 flat minutes from the archive or a backfill, then the same three live values: still flat.
+        e.addHistory((0..<15).map { TestSupport.reading(90, minute: $0) })
+        let fired = [91.0, 90, 87].enumerated().flatMap { offset, value in
+            e.process(TestSupport.reading(value, minute: 15 + offset)).map(\.ruleName)
+        }
+        XCTAssertTrue(fired.isEmpty)
     }
 
     func testPredictiveLowRearmsAfterRecovery() throws {
         var e = try engine(trend: [lowSoon])
-        let falling = (0..<8).map { 120 - Double($0) * 2 }       // fires
+        let falling = (0..<12).map { 120 - Double($0) * 2 }      // fires
         let flat = Array(repeating: 110.0, count: 20)               // clears
         let fallingAgain = (0..<16).map { 110 - Double($0) * 2 }   // fires again once the window is all falling
         let fired = run(&e, falling + flat + fallingAgain).flatMap { $0 }
@@ -50,11 +76,11 @@ final class TrendAlertTests: XCTestCase {
         let falling = TrendAlert(name: "Falling", kind: .fallingFast(mgdLPerMinute: 2), sound: .silent)
         let rising = TrendAlert(name: "Rising", kind: .risingFast(mgdLPerMinute: 2), sound: .silent)
         var e = try engine(trend: [falling, rising])
-        let fired = run(&e, (0..<6).map { 200 - Double($0) * 3 })
+        let fired = run(&e, (0..<12).map { 200 - Double($0) * 3 })
         XCTAssertEqual(fired.flatMap { $0 }, ["Falling"])
 
         var e2 = try engine(trend: [falling, rising])
-        let fired2 = run(&e2, (0..<6).map { 100 + Double($0) * 3 })
+        let fired2 = run(&e2, (0..<12).map { 100 + Double($0) * 3 })
         XCTAssertEqual(fired2.flatMap { $0 }, ["Rising"])
     }
 
@@ -66,9 +92,20 @@ final class TrendAlertTests: XCTestCase {
 
     func testAcknowledgeSnoozesTrendAlert() throws {
         var e = try engine(trend: [lowSoon])
-        e.acknowledge(ruleID: lowSoon.id, at: TestSupport.noon)
-        let fired = run(&e, (0..<10).map { 120 - Double($0) * 2 })
-        XCTAssertTrue(fired.flatMap { $0 }.isEmpty, "snoozed for 30 minutes")
+        let falling = (0..<12).map { 120 - Double($0) * 2 }
+        XCTAssertEqual(run(&e, falling).flatMap { $0 }, ["Low soon"])
+        e.acknowledge(ruleID: lowSoon.id, at: TestSupport.noon.addingTimeInterval(11 * 60))
+        // Recovers (re-arms), then falls again within the 30-minute snooze: stays quiet.
+        let flat = (12..<22).map { e.process(TestSupport.reading(110, minute: $0)) }
+        let again = (22..<40).map { e.process(TestSupport.reading(110 - Double($0 - 22) * 2, minute: $0)) }
+        XCTAssertTrue((flat + again).flatMap { $0 }.isEmpty, "snoozed for 30 minutes")
+    }
+
+    func testSnoozeOnATrendAlertThatIsNotSoundingDoesNothing() throws {
+        var e = try engine(trend: [lowSoon])
+        XCTAssertFalse(e.acknowledge(ruleID: lowSoon.id, at: TestSupport.noon))
+        let fired = run(&e, (0..<12).map { 120 - Double($0) * 2 })
+        XCTAssertEqual(fired.flatMap { $0 }, ["Low soon"], "an old Snooze must not silence the next episode")
     }
 
     func testDisabledTrendAlertIsIgnored() throws {

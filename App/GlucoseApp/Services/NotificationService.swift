@@ -14,8 +14,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     /// iOS keeps at most 64 pending notifications; leave room for the others.
     static let maxDemoAlerts = 30
 
-    /// Called when the user taps Snooze on an alert notification.
-    var onSnooze: (@MainActor (UUID) -> Void)?
+    /// Called when the user taps Snooze on an alert notification, with the time the alert was sent.
+    var onSnooze: (@MainActor (UUID, Date?) -> Void)?
     /// True once Apple's Critical Alerts entitlement is granted and the user allowed it.
     private(set) var criticalAllowed = false
 
@@ -81,7 +81,7 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private func content(for event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = event.ruleName
-        let value = unit.format(mgdL: event.valueMgdL, includeSymbol: true)
+        let value = unit.formatReading(mgdL: event.valueMgdL, includeSymbol: true)
         switch event.kind {
         case .initial: content.body = "Glucose \(value)"
         case .reminder(let count): content.body = "Still \(value) (reminder \(count))"
@@ -185,7 +185,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         if response.actionIdentifier == Self.snoozeAction,
            let idString = response.notification.request.content.userInfo["ruleID"] as? String,
            let id = UUID(uuidString: idString) {
-            Task { @MainActor in self.onSnooze?(id) }
+            let sentAt = response.notification.date
+            Task { @MainActor in self.onSnooze?(id, sentAt) }
         }
         completionHandler()
     }

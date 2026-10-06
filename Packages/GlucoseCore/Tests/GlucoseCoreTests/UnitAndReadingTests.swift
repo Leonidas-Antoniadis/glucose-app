@@ -32,10 +32,22 @@ final class UnitAndReadingTests: XCTestCase {
         let merged = ReadingPipeline.merge([], with: [
             TestSupport.reading(0, minute: 0),
             TestSupport.reading(.nan, minute: 1),
-            TestSupport.reading(900, minute: 2),
+            TestSupport.reading(1200, minute: 2),
             TestSupport.reading(110, minute: 3),
         ])
         XCTAssertEqual(merged.map(\.mgdL), [110])
+    }
+
+    func testVeryLowAndHighValuesBecomeLOAndHI() {
+        XCTAssertEqual(ReadingPipeline.clamped(15), 39, "a deep low is kept as LO, not dropped")
+        XCTAssertEqual(ReadingPipeline.clamped(-20), 39)
+        XCTAssertEqual(ReadingPipeline.clamped(650), 501)
+        XCTAssertEqual(ReadingPipeline.clamped(120), 120)
+        XCTAssertNil(ReadingPipeline.clamped(.nan))
+        XCTAssertTrue(ReadingPipeline.isPlausible(TestSupport.reading(39, minute: 0)))
+        XCTAssertEqual(GlucoseUnit.mgdL.formatReading(mgdL: 39), "LO")
+        XCTAssertEqual(GlucoseUnit.mmolL.formatReading(mgdL: 501), "HI")
+        XCTAssertEqual(GlucoseUnit.mgdL.formatReading(mgdL: 64), "64")
     }
 
     func testGapDetection() {

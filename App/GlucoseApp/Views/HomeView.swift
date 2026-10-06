@@ -165,7 +165,7 @@ struct CurrentValueCard: View {
         VStack(alignment: .leading, spacing: 8) {
             if let latest = model.latest {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(model.unit.format(mgdL: latest.mgdL))
+                    Text(model.unit.formatReading(mgdL: latest.mgdL))
                         .font(.system(size: 72, weight: .bold, design: .rounded))
                         .foregroundStyle(model.isStale ? Color.secondary : RangeColor.color(for: latest.mgdL))
                         .strikethrough(model.isStale)
@@ -225,18 +225,24 @@ struct RecentAlertsList: View {
             if model.recentEvents.isEmpty {
                 Text("No alerts yet.").foregroundStyle(.secondary)
             }
-            ForEach(Array(model.recentEvents.prefix(10).enumerated()), id: \.offset) { _, event in
+            let events = Array(model.recentEvents.prefix(10))
+            ForEach(Array(events.enumerated()), id: \.offset) { index, event in
+                // Snooze only on the newest row of an alert that is sounding now: on an old row it
+                // would silence the next episode.
+                let isNewestOfRule = !events.prefix(index).contains { $0.ruleID == event.ruleID }
                 HStack {
                     Image(systemName: event.direction == .low ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                         .foregroundStyle(event.direction == .low ? .red : .orange)
                     VStack(alignment: .leading) {
-                        Text("\(event.ruleName): \(model.unit.format(mgdL: event.valueMgdL, includeSymbol: true))")
+                        Text("\(event.ruleName): \(model.unit.formatReading(mgdL: event.valueMgdL, includeSymbol: true))")
                         Text(event.date, style: .time).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Snooze") { model.acknowledge(ruleID: event.ruleID) }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
+                    if isNewestOfRule, model.isAlertSounding(event.ruleID) {
+                        Button("Snooze") { model.acknowledge(ruleID: event.ruleID) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
                 }
             }
         }

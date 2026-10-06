@@ -49,9 +49,26 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
         }
     }
 
-    /// The rules that keep the urgent-low safeguard satisfied (enabled lows at or below 60 mg/dL).
+    /// The rules that keep the urgent-low safeguard satisfied: enabled lows at or below 60 mg/dL
+    /// that are active all day. A night-only urgent low leaves the day unprotected.
     public var urgentLowRules: [AlertRule] {
-        rules(for: .low).filter { $0.isEnabled && $0.thresholdMgdL <= Self.urgentLowMgdL }
+        rules(for: .low).filter { $0.isEnabled && $0.thresholdMgdL <= Self.urgentLowMgdL && $0.schedule == .always }
+    }
+
+    /// A preset's rules with this set's trend alerts kept (a preset doesn't touch "Low soon"
+    /// or "Falling fast"). Rules matching an existing one by direction and name keep its id, so
+    /// a snooze or repeat in progress carries over and older notifications still match a rule.
+    public func applyingPreset(_ preset: AlertRuleSet) -> AlertRuleSet {
+        var result = preset
+        result.trendAlerts = trendAlerts
+        var unused = rules
+        result.rules = preset.rules.map { rule in
+            guard let index = unused.firstIndex(where: { $0.direction == rule.direction && $0.name == rule.name }) else { return rule }
+            var kept = rule
+            kept.id = unused.remove(at: index).id
+            return kept
+        }
+        return result
     }
 
     public func rules(for direction: AlertDirection) -> [AlertRule] {
@@ -125,7 +142,7 @@ public struct AlertRuleSet: Codable, Hashable, Sendable {
            highestLow >= lowestHigh {
             issues.append(.lowAboveHigh(lowMgdL: highestLow, highMgdL: lowestHigh))
         }
-        if !lows.contains(where: { $0.thresholdMgdL <= Self.urgentLowMgdL }) {
+        if urgentLowRules.isEmpty {
             issues.append(.noUrgentLow)
         }
         return issues

@@ -41,6 +41,13 @@ public enum GlucoseUnit: String, Codable, CaseIterable, Sendable {
         return includeSymbol ? "\(number) \(symbol)" : number
     }
 
+    /// Formats a sensor reading: like `format`, but LO and HI at the ends of the sensor's range.
+    public func formatReading(mgdL value: Double, includeSymbol: Bool = false) -> String {
+        if value <= ReadingPipeline.lowMgdL { return "LO" }
+        if value >= ReadingPipeline.highMgdL { return "HI" }
+        return format(mgdL: value, includeSymbol: includeSymbol)
+    }
+
     /// Step size for threshold editors in this unit, expressed in mg/dL.
     public var editorStepMgdL: Double {
         switch self {

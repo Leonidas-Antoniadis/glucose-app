@@ -59,6 +59,10 @@ final class AppModel {
         self.settings = settings
         self.savedSettings = settings
         self.engine = AlertEngine(ruleSet: settings.ruleSet)
+        // Snoozes, repeats and the decision log survive iOS relaunching the app.
+        if settings.dataSource == .libre, !ScreenshotMode.isActive, let saved = stores.alertState.load() {
+            engine.restore(saved, now: Date())
+        }
         let now = Date()
         self.demoSensor = SimulatedSensor(startedAt: Date(timeIntervalSince1970: (now.timeIntervalSince1970 / 60).rounded(.down) * 60 - 15 * 86_400))
         self.sensor = SensorConnection(stores: stores)
@@ -69,7 +73,7 @@ final class AppModel {
 
         sensor.onReadings = { [weak self] readings, live in self?.ingest(readings, live: live) }
         sensor.onEvent = { [weak self] event in self?.handleSensorEvent(event) }
-        notifications.onSnooze = { [weak self] id in self?.acknowledge(ruleID: id) }
+        notifications.onSnooze = { [weak self] id, sentAt in self?.acknowledge(ruleID: id, eventDate: sentAt) }
     }
 
     // MARK: Derived state
@@ -142,10 +146,20 @@ final class AppModel {
         pruneOldData()
     }
 
-    func activateSource() {
+    /// Starts the chosen data source. `resetEngine` is for a change of data source: alerts from
+    /// the demo and the real sensor must not mix. Pairing again or restoring a backup keeps the
+    /// alert engine, so a snooze isn't lost and a low already announced doesn't alarm again as new.
+    func activateSource(resetEngine: Bool = false) {
         demoTask?.cancel()
         notifications.cancelDemoAlerts()
-        engine = AlertEngine(ruleSet: settings.ruleSet)
+        if resetEngine {
+            engine = AlertEngine(ruleSet: settings.ruleSet)
+            stores.alertState.delete()
+            recentEvents = []
+            alarm.stop()
+        } else {
+            engine.ruleSet = settings.ruleSet
+        }
         switch settings.dataSource {
         case .demo:
             sensor.stop()
@@ -155,6 +169,8 @@ final class AppModel {
             let now = Date()
             readings = (try? stores.archive?.load(from: now.addingTimeInterval(-Self.memoryDays * 86_400),
                                                   to: now.addingTimeInterval(3600))) ?? []
+            // Trend alerts need the last minutes of history, not just the next live readings.
+            engine.addHistory(readings(lastHours: 0.5))
             sensor.start()
             if let record = sensor.record {
                 notifications.scheduleSensorReminders(SensorLifecycle.reminders(expiresAt: record.expiresAt, now: now))
@@ -258,14 +274,20 @@ final class AppModel {
             }
         }
 
+        // Backfilled minutes give the trend alerts a full 15-minute window right after a reconnect.
+        engine.addHistory(fresh)
+
         guard live, let latest = readings.last, valid.contains(where: { $0.id == latest.id }) else { return }
         let isNewer = previousLatest.map { latest.timestamp > $0 } ?? true
         guard isNewer else { return }
 
         // Don't alert on old values that arrive late (backfill after a long gap).
         if latest.source == .simulated || Date().timeIntervalSince(latest.timestamp) < 10 * 60 {
+            let before = (engine.states, engine.trendStates)
+            let events = engine.process(latest)
             // A demo in the background already has its alerts scheduled (see scheduleDemoAlertsAhead).
-            deliver(engine.process(latest), notify: !(demoRunsAhead && !isActive))
+            deliver(events, notify: !(demoRunsAhead && !isActive))
+            saveAlertState(force: !events.isEmpty || before.0 != engine.states || before.1 != engine.trendStates)
         }
         // In the background the demo stops when iOS suspends the app, which isn't missing data.
         if !isDemo || (settings.demoSpeed == .realTime && isActive) {
@@ -353,9 +375,27 @@ final class AppModel {
         notificationProblem = status.problem
     }
 
-    func acknowledge(ruleID: UUID) {
-        engine.acknowledge(ruleID: ruleID, at: Date())
+    /// Snooze from the app or from a notification (`eventDate`: when that alert was sent).
+    func acknowledge(ruleID: UUID, eventDate: Date? = nil) {
+        engine.acknowledge(ruleID: ruleID, at: Date(), eventDate: eventDate)
         alarm.stop()
+        saveAlertState(force: true)
+    }
+
+    /// Whether an alert is in an episode it already announced, so Snooze means something.
+    func isAlertSounding(_ ruleID: UUID) -> Bool {
+        engine.isFiring(ruleID)
+    }
+
+    @ObservationIgnored private var alertStateSavedAt = Date.distantPast
+
+    /// Saves the alert engine's memory: right away when something changed, otherwise at most
+    /// every 5 minutes (so the gap check after a relaunch knows when the last reading was).
+    private func saveAlertState(force: Bool) {
+        guard !isDemo, !ScreenshotMode.isActive else { return }
+        guard force || Date().timeIntervalSince(alertStateSavedAt) > 5 * 60 else { return }
+        alertStateSavedAt = Date()
+        try? stores.alertState.save(engine.snapshot)
     }
 
     // MARK: Sensor events
@@ -388,6 +428,7 @@ final class AppModel {
             // new readings don't sort before old ones (that would stop alerts and updates).
             readings = ReadingPipeline.retimed(readings, sensorSerial: serial, activatedAt: activatedAt)
             engine.shiftTimeline(by: interval)
+            saveAlertState(force: true)
             do {
                 try stores.archive?.retime(sensorSerial: serial, activatedAt: activatedAt, through: Date())
             } catch {
@@ -413,7 +454,7 @@ final class AppModel {
         sensor.allowUnverifiedTypes = settings.allowUnverifiedSensorTypes
         sensor.recordAllRawData = settings.recordAllRawData
         if old.dataSource != settings.dataSource || old.demoSpeed != settings.demoSpeed {
-            activateSource()
+            activateSource(resetEngine: true)
         }
         if old.liveActivity && !settings.liveActivity {
             surfaces.endLiveActivity()
@@ -632,6 +673,6 @@ final class AppModel {
         logbook = []
         fingersticks = []
         recentEvents = []
-        activateSource()
+        activateSource(resetEngine: true)
     }
 }

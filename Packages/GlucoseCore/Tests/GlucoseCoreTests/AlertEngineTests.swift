@@ -107,6 +107,86 @@ final class AlertEngineTests: XCTestCase {
         XCTAssertEqual(run(&e, [60, 50]), [[], []])
     }
 
+    // MARK: Fix plan phase 2
+
+    func testCoveredRuleRemindsAfterTheMoreSevereRuleStops() throws {
+        // Night preset style: 70 with a 10-minute confirmation and 5-minute repeats, urgent at 55.
+        var e = try engine([rule("Night low", .low, 70, repeatEvery: 5, confirm: 10), rule("Urgent", .low, 55, repeatEvery: 5)])
+        // Falls 1.5 mg/dL per minute from 69 to 54, then holds at 56 (urgent no longer crossed).
+        let values = (0...10).map { 69 - Double($0) * 1.5 } + Array(repeating: 56, count: 8)
+        let fired = run(&e, values)
+        XCTAssertEqual(fired[10], ["Urgent"])
+        XCTAssertEqual(fired[11..<15].flatMap { $0 }, [])
+        XCTAssertEqual(fired[15], ["Night low"], "nobody snoozed, so the covered rule reminds")
+    }
+
+    func testNewLowAfterADataGapAlertsAgain() throws {
+        var e = try engine([rule("Urgent", .low, 60, repeatEvery: 5, maxRepeats: 3)])
+        let first = (0..<16).flatMap { e.process(TestSupport.reading(58, minute: $0)) }
+        XCTAssertEqual(first.count, 4, "initial alert and 3 reminders")
+        // 100 minutes without data (the recovery and the new fall were never seen), then 56.
+        XCTAssertEqual(e.process(TestSupport.reading(56, minute: 115)).map(\.kind), [.initial])
+    }
+
+    func testSnoozeOnAnOldAlertDoesNotMuteTheNextLow() throws {
+        let urgent = rule("Urgent", .low, 60, repeatEvery: 5)
+        var e = try engine([urgent])
+        _ = run(&e, [58, 120])   // fired, then recovered and re-armed
+        XCTAssertFalse(e.acknowledge(ruleID: urgent.id, at: TestSupport.noon.addingTimeInterval(120)))
+        let later = (3..<14).map { e.process(TestSupport.reading(57, minute: $0)).map(\.kind) }
+        XCTAssertEqual(later[0], [.initial])
+        XCTAssertEqual(later[5], [.reminder(count: 1)], "reminders aren't muted by the old snooze")
+    }
+
+    func testSnoozeCoversEverySoundingRuleInThatDirection() throws {
+        let night = rule("Night low", .low, 70, repeatEvery: 5)
+        let urgent = rule("Urgent", .low, 55, repeatEvery: 5)
+        var e = try engine([night, urgent])
+        _ = e.process(TestSupport.reading(54, minute: 0))
+        e.acknowledge(ruleID: urgent.id, at: TestSupport.noon)
+        let quiet = (1..<29).flatMap { e.process(TestSupport.reading(60, minute: $0)) }
+        XCTAssertTrue(quiet.isEmpty, "the covered rule is snoozed too")
+    }
+
+    func testConfirmationSurvivesReadingsInTheRearmBand() throws {
+        var e = try engine([rule("Night low", .low, 70, confirm: 10)])
+        let fired = run(&e, [66, 67, 69, 70, 68, 66, 69, 71, 67, 68, 69, 66, 68])
+        XCTAssertEqual(fired.firstIndex { !$0.isEmpty }, 10, "readings of 70 and 71 don't restart the 10 minutes")
+    }
+
+    func testRuleTurnedBackOnStartsFresh() throws {
+        var high = rule("High", .high, 180)
+        var e = try engine([high])
+        _ = run(&e, [190])
+        high.isEnabled = false
+        e.ruleSet = try AlertRuleSet(rules: [high], trendAlerts: [])
+        _ = e.process(TestSupport.reading(120, minute: 1))
+        high.isEnabled = true
+        e.ruleSet = try AlertRuleSet(rules: [high], trendAlerts: [])
+        XCTAssertEqual(e.process(TestSupport.reading(195, minute: 2)).map(\.kind), [.initial])
+    }
+
+    func testSnoozeSurvivesARelaunch() throws {
+        let urgent = rule("Urgent", .low, 60, repeatEvery: 5)
+        var e = try engine([urgent])
+        _ = e.process(TestSupport.reading(57, minute: 0))
+        e.acknowledge(ruleID: urgent.id, at: TestSupport.noon)
+        let saved = try JSONEncoder().encode(e.snapshot)
+
+        var relaunched = try engine([urgent])
+        relaunched.restore(try JSONDecoder().decode(AlertEngine.Snapshot.self, from: saved), now: TestSupport.noon.addingTimeInterval(60))
+        XCTAssertTrue(relaunched.process(TestSupport.reading(57, minute: 1)).isEmpty, "still snoozed")
+        XCTAssertFalse(relaunched.log.isEmpty, "the decision log comes back too")
+    }
+
+    func testSnoozeFromANotificationAfterARelaunchIsKept() throws {
+        let urgent = rule("Urgent", .low, 60, repeatEvery: 5)
+        var e = try engine([urgent])   // empty: iOS relaunched the app
+        let sentAt = TestSupport.noon
+        XCTAssertTrue(e.acknowledge(ruleID: urgent.id, at: sentAt.addingTimeInterval(120), eventDate: sentAt))
+        XCTAssertTrue(e.process(TestSupport.reading(57, minute: 3)).isEmpty, "the snooze holds instead of re-alarming")
+    }
+
     func testEveryDecisionIsLogged() throws {
         var e = try engine([rule("L80", .low, 80), rule("L70", .low, 70)])
         _ = run(&e, [65, 90])
