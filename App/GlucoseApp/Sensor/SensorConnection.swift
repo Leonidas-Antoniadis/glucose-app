@@ -38,6 +38,8 @@ final class SensorConnection {
         case scanned
         case bluetoothOff
         case sensorEnded
+        /// The sensor was forgotten: its scheduled notifications no longer apply.
+        case forgotten
         case error(String)
         /// The sensor's start time moved by `interval` (the phone clock changed or drifted):
         /// its readings must be re-dated before new ones arrive.
@@ -202,6 +204,7 @@ final class SensorConnection {
         lastPacketAt = nil
         lastRaw = nil
         log("Sensor forgotten")
+        onEvent?(.forgotten)
     }
 
     /// Restores a sensor record from a backup (the sensor itself still needs to be in range).

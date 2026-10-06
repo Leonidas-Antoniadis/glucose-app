@@ -76,11 +76,16 @@ struct AlertsView: View {
                         Text("After \(model.settings.missingData.minutes) min without readings")
                     }
                     Toggle("Quiet during sensor warm-up", isOn: $model.settings.missingData.suppressDuringWarmUp)
-                    SoundPicker(sound: $model.settings.missingData.sound)
+                    SoundPicker(sound: $model.settings.missingData.sound, defaultTune: "chime", defaultVoice: "no_data")
+                    Button("Send test alert", systemImage: "bell.badge") {
+                        model.sendTestMissingDataAlert()
+                    }
                 } header: {
                     Text("Missing data")
                 } footer: {
-                    Text("Scheduled ahead with iOS, so it still fires if the app has been closed.")
+                    Text(model.settings.runInBackground
+                         ? "Scheduled ahead with iOS, so it still fires if the app has been closed."
+                         : "Off while the app is closed, because Run in background is off (Settings → Battery).")
                 }
 
                 Section("Presets") {
@@ -171,6 +176,10 @@ struct RuleRow: View {
 struct SoundPicker: View {
     @Binding var sound: SoundStyle
     var direction: AlertDirection = .low
+    /// What Tune and Voice switch to. Defaults to the low or high alarm and voice, which would be
+    /// wrong for the missing-data alert (a data gap must not announce "Glucose low").
+    var defaultTune: String? = nil
+    var defaultVoice: String? = nil
 
     private enum Kind: String, CaseIterable, Identifiable {
         case silent = "Silent", tune = "Tune", voice = "Voice"
@@ -186,6 +195,11 @@ struct SoundPicker: View {
         if case .tune(let name) = sound {
             Picker("Tune", selection: Binding(get: { name }, set: { sound = .tune(name: $0) })) {
                 ForEach(SoundCatalog.tunes + SoundCatalog.customTunes()) { Text($0.title).tag($0.id) }
+            }
+            if SoundCatalog.isMissing(sound) {
+                Text("This imported tune isn't on this phone (for example after restoring a backup), so the built-in alarm plays instead. Import it again or pick another tune.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
         }
         if case .voice(let clip) = sound {
@@ -220,8 +234,8 @@ struct SoundPicker: View {
         } set: { newKind in
             switch newKind {
             case .silent: sound = .silent
-            case .tune: sound = .tune(name: direction == .low ? "alarm_loud_low" : "alarm_high")
-            case .voice: sound = .voice(clip: direction == .low ? "glucose_low" : "glucose_high")
+            case .tune: sound = .tune(name: defaultTune ?? (direction == .low ? "alarm_loud_low" : "alarm_high"))
+            case .voice: sound = .voice(clip: defaultVoice ?? (direction == .low ? "glucose_low" : "glucose_high"))
             }
         }
     }
@@ -410,6 +424,9 @@ struct TrendAlertEditorView: View {
                 }
                 Stepper(value: $alert.snoozeMinutes, in: 5...240, step: 5) {
                     Text("Snooze \(alert.snoozeMinutes) min")
+                }
+                Button("Send test alert", systemImage: "bell.badge") {
+                    model.sendTestAlert(for: alert)
                 }
             }
         }

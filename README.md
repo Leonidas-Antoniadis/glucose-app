@@ -124,7 +124,7 @@ The protocol follows community reverse-engineering (DiaBLE, LibreTransmitter). T
 - A rule fires once per crossing, repeats until acknowledged (or up to its max), and re-arms after recovery plus margin.
 - The app warns before you remove or turn off your last alert at or below 60 mg/dL.
 - Every decision is written to a decision log (Settings → Diagnostics).
-- Each alert has a **Send test alert** button that plays it exactly as it would sound.
+- Every alert, including trend alerts and the missing-data alert, has a **Send test alert** button that sends it with its real sound (the app's own alarm plays for 8 seconds in a test, 30 in a real alert).
 
 ### Alerts through Silent mode and Focus (no Apple approval needed)
 

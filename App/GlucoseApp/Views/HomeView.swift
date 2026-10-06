@@ -75,7 +75,8 @@ struct StatusBanners: View {
             }
             if let expiry = model.signatureExpiry, expiry.timeIntervalSinceNow < 2 * 86_400 {
                 Banner(systemImage: "clock.badge.exclamationmark",
-                       text: "This app build expires \(expiry.formatted(.relative(presentation: .named))). Re-install it with Sideloadly.",
+                       text: "This app build expires \(expiry.formatted(.relative(presentation: .named))). "
+                           + (ProvisioningProfile.isTestFlight ? "Install the newest build from TestFlight." : "Re-install it with Sideloadly."),
                        color: .red)
             }
             if !model.isDemo {

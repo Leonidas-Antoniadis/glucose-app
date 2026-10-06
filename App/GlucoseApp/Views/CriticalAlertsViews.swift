@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 import GlucoseCore
 
 /// Opens this app's page in iOS Settings → Notifications (Time Sensitive and Critical Alerts switches).
@@ -55,12 +56,21 @@ struct CriticalAlertsChecklist: View {
             if model.criticalAlertsAllowed {
                 row(ok: true, title: "Critical Alerts allowed",
                     detail: "Alerts sound through Silent mode and Focus.")
+            } else if model.isDemo {
+                // Demo alerts on a locked phone are scheduled notifications: Silent mutes them.
+                row(ok: false, title: "Silent mode (demo)",
+                    detail: "With the phone locked, demo alerts use normal notification sounds, which Silent mutes. The app's own alarm plays while the app is open, or with a real sensor.")
             } else {
                 row(ok: model.settings.runInBackground, title: "Silent mode",
                     detail: model.settings.runInBackground
                         ? "The app plays the alarm itself, even on Silent, at your media volume."
                         : "Turn on Run in background so the app can play the alarm while closed.") {
                     Button("Turn on") { model.settings.runInBackground = true }
+                }
+                let mediaVolume = AVAudioSession.sharedInstance().outputVolume
+                if mediaVolume < 0.5 {
+                    row(ok: false, title: "Media volume \(Int((mediaVolume * 100).rounded()))%",
+                        detail: "The app's alarm plays at media volume. Turn it up with the volume buttons while no call is active. The notification still sounds at ringer volume.")
                 }
                 row(ok: model.timeSensitiveAllowed, title: "Focus",
                     detail: model.timeSensitiveAllowed

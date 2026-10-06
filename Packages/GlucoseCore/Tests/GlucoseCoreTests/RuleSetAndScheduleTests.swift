@@ -118,6 +118,16 @@ final class RuleSetAndScheduleTests: XCTestCase {
         XCTAssertEqual(grace, [last.addingTimeInterval(30 * 60)])
     }
 
+    func testMissingDataMessageSaysHowLongDataIsMissing() {
+        let last = TestSupport.noon
+        XCTAssertEqual(MissingDataAlert.message(firingAt: last.addingTimeInterval(15 * 60), lastReading: last),
+                       "No reading for 15 min. Check the sensor and Bluetooth.")
+        XCTAssertEqual(MissingDataAlert.message(firingAt: last.addingTimeInterval(180 * 60), lastReading: last),
+                       "No reading for 3 h. Check the sensor and Bluetooth.")
+        XCTAssertEqual(MissingDataAlert.message(firingAt: last.addingTimeInterval(75 * 60), lastReading: last),
+                       "No reading for 1 h 15 min. Check the sensor and Bluetooth.")
+    }
+
     func testMissingDataMinutesAreClamped() {
         var alert = MissingDataAlert(minutes: 1)
         XCTAssertEqual(alert.minutes, 5)

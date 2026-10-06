@@ -98,6 +98,24 @@ enum SoundCatalog {
         }
     }
 
+    /// A sound that can actually play. An imported tune whose file is missing (for example after
+    /// restoring a backup on a new phone) is replaced by `fallback`: without this the notification
+    /// would use the iOS default sound, which Silent mode mutes.
+    static func playable(_ style: SoundStyle, fallback: SoundStyle) -> SoundStyle {
+        guard style != .silent, url(for: style) == nil else { return style }
+        return fallback
+    }
+
+    /// The bundled alarm for a direction, used when nothing else can play.
+    static func alarm(for direction: AlertDirection) -> SoundStyle {
+        .tune(name: direction == .low ? "alarm_loud_low" : "alarm_high")
+    }
+
+    /// Whether this tune's file is missing on this phone.
+    static func isMissing(_ style: SoundStyle) -> Bool {
+        style != .silent && url(for: style) == nil
+    }
+
     static func notificationSound(for style: SoundStyle, critical: Bool, volume: Double) -> UNNotificationSound? {
         guard let file = fileName(for: style) else { return critical ? .defaultCritical : nil }
         let name = UNNotificationSoundName(rawValue: file)
@@ -126,10 +144,14 @@ final class SoundPreviewPlayer: NSObject, AVAudioPlayerDelegate {
     }
 
     func stop() {
+        let wasPlaying = player != nil
         player?.stop()
         player = nil
         playing = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // The audio session is shared: deactivating it while an alarm plays would cut the alarm off.
+        if wasPlaying, !AlarmPlayer.isActive {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
@@ -144,25 +166,51 @@ final class SoundPreviewPlayer: NSObject, AVAudioPlayerDelegate {
 /// Works while the app runs (foreground, or background with Bluetooth readings and "Run in background").
 @MainActor
 final class AlarmPlayer {
+    /// True while an alarm plays, so a sound preview never deactivates the audio session under it.
+    private(set) static var isActive = false
+
+    /// Whether an alarm the app plays is clearly heard: media volume at least half and the
+    /// built-in speaker. Otherwise the notification keeps its own sound, which plays at ringer volume.
+    static var isClearlyAudible: Bool {
+        let session = AVAudioSession.sharedInstance()
+        return session.outputVolume >= 0.5 && session.currentRoute.outputs.contains { $0.portType == .builtInSpeaker }
+    }
+
+    /// Called when an interrupted alarm (a call, Siri, a Clock timer) couldn't be resumed.
+    var onResumeFailed: (() -> Void)?
+
     private var player: AVAudioPlayer?
     private var stopTask: Task<Void, Never>?
+    private var interruptionObserver: NSObjectProtocol?
 
-    /// Loops the sound for up to `seconds`. Returns false if it couldn't start.
+    init() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let type = raw.flatMap { AVAudioSession.InterruptionType(rawValue: $0) }
+            MainActor.assumeIsolated { self?.interruption(type) }
+        }
+    }
+
+    /// Loops the sound for up to `seconds`. Returns false if it couldn't start. A running alarm is
+    /// only replaced once the new one is playing, so a failed start never silences it.
     func play(_ style: SoundStyle, seconds: Double = 30) -> Bool {
-        stop()
-        guard let url = SoundCatalog.url(for: style) else { return false }
+        guard let url = SoundCatalog.url(for: style), let newPlayer = try? AVAudioPlayer(contentsOf: url) else { return false }
         do {
             // .playback ignores the ring/silent switch; ducking lets it start from the background.
             try AVAudioSession.sharedInstance().setCategory(.playback, options: [.duckOthers])
             try AVAudioSession.sharedInstance().setActive(true)
-            let player = try AVAudioPlayer(contentsOf: url)
-            player.numberOfLoops = -1
-            player.volume = 1
-            guard player.play() else { return false }
-            self.player = player
         } catch {
             return false
         }
+        newPlayer.numberOfLoops = -1
+        newPlayer.volume = 1
+        guard newPlayer.play() else { return false }
+        stopTask?.cancel()
+        player?.stop()
+        player = newPlayer
+        Self.isActive = true
         stopTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
@@ -176,9 +224,18 @@ final class AlarmPlayer {
     func stop() {
         stopTask?.cancel()
         stopTask = nil
+        Self.isActive = false
         guard let player else { return }
         player.stop()
         self.player = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    /// A call, Siri or a Clock alarm pauses the alarm. When it ends, the alarm resumes for the rest
+    /// of its time; if it can't, the app is told so it can send the alert again with a sound.
+    private func interruption(_ type: AVAudioSession.InterruptionType?) {
+        guard type == .ended, let player, stopTask != nil else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if !player.play() { onResumeFailed?() }
     }
 }

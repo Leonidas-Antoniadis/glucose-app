@@ -74,6 +74,11 @@ final class AppModel {
         sensor.onReadings = { [weak self] readings, live in self?.ingest(readings, live: live) }
         sensor.onEvent = { [weak self] event in self?.handleSensorEvent(event) }
         notifications.onSnooze = { [weak self] id, sentAt in self?.acknowledge(ruleID: id, eventDate: sentAt) }
+        // An alarm cut off by a call or Siri that can't resume: send the alert again with a sound.
+        alarm.onResumeFailed = { [weak self] in
+            guard let self, let event = self.lastAlarmEvent else { return }
+            self.notifications.deliver(event, unit: self.unit, alarmPlaying: false)
+        }
     }
 
     // MARK: Derived state
@@ -175,6 +180,11 @@ final class AppModel {
             if let record = sensor.record {
                 notifications.scheduleSensorReminders(SensorLifecycle.reminders(expiresAt: record.expiresAt, now: now))
             }
+            if resetEngine {
+                // Coming from the demo: its "no data" alerts are replaced by the sensor's.
+                rescheduleMissingDataForSensor()
+            }
+            checkBattery()
         }
     }
 
@@ -291,21 +301,55 @@ final class AppModel {
         }
         // In the background the demo stops when iOS suspends the app, which isn't missing data.
         if !isDemo || (settings.demoSpeed == .realTime && isActive) {
-            let warmUp = isDemo ? nil : sensor.record?.warmUpEndsAt
-            notifications.scheduleMissingData(settings.missingData.fireDates(lastReading: latest.timestamp, warmUpEnds: warmUp),
-                                              config: settings.missingData)
+            rescheduleMissingData(lastReading: latest.timestamp)
+            notifications.clearDeliveredMissingData()
         }
         surfaces.update(latest: latest, arrow: trendArrow, recent: readings(lastHours: 3), unit: unit,
                         liveActivityEnabled: settings.liveActivity)
     }
 
+    /// Replaces the scheduled "No glucose data" notifications, counting from `lastReading`.
+    /// Off, or no sensor source: they are only cancelled.
+    private func rescheduleMissingData(lastReading: Date) {
+        guard settings.missingData.isEnabled else {
+            notifications.cancelMissingData()
+            return
+        }
+        let warmUp = isDemo ? nil : sensor.record?.warmUpEndsAt
+        notifications.scheduleMissingData(settings.missingData.fireDates(lastReading: lastReading, warmUpEnds: warmUp),
+                                          lastReading: lastReading, config: settings.missingData)
+    }
+
+    /// The real sensor's missing-data alerts after a change (settings, pairing, a new source):
+    /// counted from the newest reading, or from now if there is none or it's from before a pairing.
+    private func rescheduleMissingDataForSensor() {
+        guard !isDemo, sensor.record != nil, settings.runInBackground || isActive else {
+            notifications.cancelMissingData()
+            return
+        }
+        rescheduleMissingData(lastReading: max(readings.last?.timestamp ?? Date(), sensor.record?.pairedAt ?? .distantPast))
+    }
+
+    @ObservationIgnored private var lastAlarmEvent: AlertEvent?
+
     private func deliver(_ events: [AlertEvent], notify: Bool = true) {
         guard !events.isEmpty else { return }
-        for event in events where notify {
-            let alarmPlaying = playAlarmIfNeeded(event)
-            notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying)
-            if settings.speakValues, isActive, !alarmPlaying {
-                voice.announce(event, unit: unit)
+        if notify {
+            // One alarm per reading, the first event first (threshold rules come before trend
+            // alerts): a second alarm would cut off the first, usually more severe, one.
+            var alarmStarted = false
+            for event in events {
+                var alarmHeard = false
+                if !alarmStarted, playAlarmIfNeeded(event) {
+                    alarmStarted = true
+                    lastAlarmEvent = event
+                    // The notification only goes quiet if the app's alarm is clearly audible.
+                    alarmHeard = AlarmPlayer.isClearlyAudible
+                }
+                notifications.deliver(event, unit: unit, alarmPlaying: alarmHeard)
+                if settings.speakValues, isActive, !alarmStarted {
+                    voice.announce(event, unit: unit)
+                }
             }
         }
         recentEvents.insert(contentsOf: events.reversed(), at: 0)
@@ -350,10 +394,11 @@ final class AppModel {
     /// A Critical alert plays from the app while iOS won't let its notification through Silent and Focus.
     private func playAlarmIfNeeded(_ event: AlertEvent, seconds: Double = 30) -> Bool {
         guard event.isCritical, !notifications.criticalAllowed else { return false }
-        let style = event.sound == .silent
-            ? SoundStyle.tune(name: event.direction == .low ? "alarm_loud_low" : "alarm_high")
-            : event.sound
-        return alarm.play(style, seconds: seconds)
+        // A silent rule, or an imported tune missing on this phone, plays the bundled alarm.
+        let fallback = SoundCatalog.alarm(for: event.direction)
+        let style = event.sound == .silent ? fallback : SoundCatalog.playable(event.sound, fallback: fallback)
+        if alarm.play(style, seconds: seconds) { return true }
+        return style != fallback && alarm.play(fallback, seconds: seconds)
     }
 
     /// Sends a rule's alert right away, exactly as it would sound, without logging it.
@@ -361,7 +406,30 @@ final class AppModel {
         let event = AlertEvent(ruleID: rule.id, ruleName: "Test: \(rule.name)", direction: rule.direction,
                                valueMgdL: rule.thresholdMgdL, date: Date(), sound: rule.sound,
                                isCritical: rule.isCritical, criticalVolume: rule.criticalVolume, kind: .initial)
-        notifications.deliver(event, unit: unit, alarmPlaying: playAlarmIfNeeded(event, seconds: 8))
+        sendTest(event)
+    }
+
+    /// Sends a trend alert ("Low soon", "Falling fast", "Rising fast") right away, as it would sound.
+    func sendTestAlert(for alert: TrendAlert) {
+        let value: Double
+        if case .predictiveLow(let threshold, _) = alert.kind { value = threshold + 15 } else { value = 120 }
+        let event = AlertEvent(ruleID: alert.id, ruleName: "Test: \(alert.name)", direction: alert.kind.direction,
+                               valueMgdL: value, date: Date(), sound: alert.sound,
+                               isCritical: alert.isCritical, criticalVolume: 1, kind: .initial)
+        sendTest(event)
+    }
+
+    /// Sends the "No glucose data" alert right away, as it would sound.
+    func sendTestMissingDataAlert() {
+        notifications.post(title: "Test: No glucose data",
+                           body: MissingDataAlert.message(firingAt: Date(), lastReading: Date().addingTimeInterval(-Double(settings.missingData.minutes) * 60)),
+                           sound: SoundCatalog.playable(settings.missingData.sound, fallback: .tune(name: "chime")))
+    }
+
+    /// Test alerts play the alarm for 8 seconds; real ones for 30.
+    private func sendTest(_ event: AlertEvent) {
+        let alarmPlaying = playAlarmIfNeeded(event, seconds: 8)
+        notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying && AlarmPlayer.isClearlyAudible)
     }
 
     func stopAlarm() {
@@ -377,9 +445,14 @@ final class AppModel {
 
     /// Snooze from the app or from a notification (`eventDate`: when that alert was sent).
     func acknowledge(ruleID: UUID, eventDate: Date? = nil) {
+        // A demo running ahead in the background: bring it up to now first (its alerts were only
+        // scheduled), snooze, then schedule the rest again so the snoozed reminders don't come.
+        let demoAhead = demoRunsAhead && !isActive
+        if demoAhead { catchUpDemo() }
         engine.acknowledge(ruleID: ruleID, at: Date(), eventDate: eventDate)
         alarm.stop()
         saveAlertState(force: true)
+        if demoAhead { scheduleDemoAlertsAhead() }
     }
 
     /// Whether an alert is in an episode it already announced, so Snooze means something.
@@ -413,12 +486,22 @@ final class AppModel {
             } else {
                 activateSource()
             }
+            // Old "no data" alerts (from the demo or the previous sensor) must not fire during the
+            // new sensor's warm-up.
+            rescheduleMissingDataForSensor()
         case .bluetoothOff:
             if settings.bluetoothAlert {
                 notifications.post(title: "Bluetooth is off", body: "Glucose readings have stopped. Turn Bluetooth on to reconnect.")
             }
         case .sensorEnded:
+            notifications.cancelMissingData()
+            // The scheduled "Sensor ended" reminder says the same: show one notification, not two.
+            notifications.cancelSensorReminders()
             notifications.post(title: "Sensor ended", body: "Start a new sensor with LibreLink, then pair it in this app.")
+        case .forgotten:
+            notifications.cancelMissingData()
+            notifications.cancelSensorReminders()
+            surfaces.endLiveActivity()
         case .scanned:
             lastError = nil
         case .error(let message):
@@ -450,6 +533,14 @@ final class AppModel {
         }
         if old.ruleSet != settings.ruleSet {
             engine.ruleSet = settings.ruleSet
+        }
+        // The queued "No glucose data" alerts follow the new settings right away, also while no
+        // reading arrives to reschedule them (which is exactly when they fire).
+        if old.missingData != settings.missingData, settings.dataSource == old.dataSource {
+            rescheduleMissingDataForSensor()
+        }
+        if settings.batteryAlert, !old.batteryAlert {
+            checkBattery()
         }
         sensor.allowUnverifiedTypes = settings.allowUnverifiedSensorTypes
         sensor.recordAllRawData = settings.recordAllRawData
@@ -670,6 +761,8 @@ final class AppModel {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.checkBattery() }
         }
+        // A phone already under 15% at launch would otherwise wait for the next level change.
+        checkBattery()
     }
 
     private func checkBattery() {
@@ -725,6 +818,10 @@ final class AppModel {
         logbook = []
         fingersticks = []
         recentEvents = []
+        // Glucose values on the Lock Screen and in Notification Center go too; only the warnings
+        // about the app build expiring come back.
+        notifications.removeAll()
+        notifications.scheduleSignatureReminders(expiry: signatureExpiry)
         activateSource(resetEngine: true)
     }
 }

@@ -71,6 +71,21 @@ public struct MissingDataAlert: Codable, Hashable, Sendable {
         }
         return dates.filter { schedule.isActive(at: $0, calendar: calendar) }
     }
+
+    /// The notification text for one fire date: how long data has really been missing by then,
+    /// not just the first delay (the 01:00 repeat says 3 h, not 15 min).
+    public static func message(firingAt date: Date, lastReading: Date) -> String {
+        let minutes = max(1, Int((date.timeIntervalSince(lastReading) / 60).rounded()))
+        let elapsed: String
+        if minutes < 60 {
+            elapsed = "\(minutes) min"
+        } else if minutes % 60 == 0 {
+            elapsed = "\(minutes / 60) h"
+        } else {
+            elapsed = "\(minutes / 60) h \(minutes % 60) min"
+        }
+        return "No reading for \(elapsed). Check the sensor and Bluetooth."
+    }
 }
 
 /// Lifecycle of a Libre 2 Plus sensor.

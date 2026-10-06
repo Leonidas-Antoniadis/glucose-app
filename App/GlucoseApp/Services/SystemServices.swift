@@ -18,9 +18,20 @@ final class VoiceAnnouncer {
     }
 }
 
-/// Reads the expiry date of the provisioning profile Sideloadly or Xcode embedded in the app.
+/// When this build stops opening: the expiry of the provisioning profile Sideloadly or Xcode
+/// embedded in the app, or for a TestFlight build (which has no profile) 90 days after it was built.
 enum ProvisioningProfile {
     static func expirationDate() -> Date? {
+        embeddedProfileExpiry() ?? testFlightExpiry()
+    }
+
+    /// TestFlight installs carry a sandbox receipt instead of an embedded profile.
+    static var isTestFlight: Bool {
+        Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision") == nil
+            && Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+    }
+
+    private static func embeddedProfileExpiry() -> Date? {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
               let start = data.range(of: Data("<?xml".utf8)),
@@ -28,6 +39,19 @@ enum ProvisioningProfile {
         let plistData = data.subdata(in: start.lowerBound..<end.upperBound)
         let plist = try? PropertyListSerialization.propertyList(from: plistData, format: nil) as? [String: Any]
         return plist?["ExpirationDate"] as? Date
+    }
+
+    /// The TestFlight upload stamps the build number as the UTC build time, yyyyMMddHHmm, and
+    /// TestFlight builds expire 90 days after upload.
+    private static func testFlightExpiry() -> Date? {
+        guard isTestFlight,
+              let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              build.count == 12, build.allSatisfy(\.isNumber) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMddHHmm"
+        return formatter.date(from: build)?.addingTimeInterval(90 * 86_400)
     }
 }
 

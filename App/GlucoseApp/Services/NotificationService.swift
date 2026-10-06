@@ -60,7 +60,8 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         return Status(critical: criticalAllowed, timeSensitive: settings.timeSensitiveSetting == .enabled, problem: problem)
     }
 
-    /// `alarmPlaying`: the app is already playing the sound itself, so the notification stays quiet.
+    /// `alarmPlaying`: the app is already playing the sound itself, loud enough to hear, so the
+    /// notification stays quiet.
     func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false) {
         center.add(UNNotificationRequest(identifier: UUID().uuidString,
                                          content: content(for: event, unit: unit, alarmPlaying: alarmPlaying), trigger: nil))
@@ -75,7 +76,9 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
 
     func cancelDemoAlerts() {
-        center.removePendingNotificationRequests(withIdentifiers: (0..<Self.maxDemoAlerts).map { "\(Self.demoPrefix)\($0)" })
+        let ids = (0..<Self.maxDemoAlerts).map { "\(Self.demoPrefix)\($0)" }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
     }
 
     private func content(for event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool) -> UNMutableNotificationContent {
@@ -91,9 +94,10 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         content.userInfo = ["ruleID": event.ruleID.uuidString]
         content.threadIdentifier = event.direction.rawValue
         let critical = event.isCritical && criticalAllowed
+        let sound = SoundCatalog.playable(event.sound, fallback: SoundCatalog.alarm(for: event.direction))
         content.sound = alarmPlaying && !critical
             ? nil
-            : SoundCatalog.notificationSound(for: event.sound, critical: critical, volume: event.criticalVolume)
+            : SoundCatalog.notificationSound(for: sound, critical: critical, volume: event.criticalVolume)
         if critical {
             content.interruptionLevel = .critical
         } else {
@@ -111,22 +115,50 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
     }
 
-    /// Replaces the pending "no data" notifications. Called on every new reading.
-    func scheduleMissingData(_ dates: [Date], config: MissingDataAlert) {
-        let ids = (0..<MissingDataAlert.maxScheduledNotifications).map { "\(Self.missingDataPrefix)\($0)" }
+    private static var missingDataIDs: [String] {
+        (0..<MissingDataAlert.maxScheduledNotifications).map { "\(missingDataPrefix)\($0)" }
+    }
+
+    /// Replaces the pending "no data" notifications. Called on every new reading. Dates already
+    /// past are skipped: scheduled now, they would fire a second later.
+    func scheduleMissingData(_ dates: [Date], lastReading: Date, config: MissingDataAlert) {
+        let ids = Self.missingDataIDs
         center.removePendingNotificationRequests(withIdentifiers: ids)
-        for (index, date) in dates.enumerated() where index < ids.count {
+        for (index, date) in dates.filter({ $0 > Date() }).enumerated() where index < ids.count {
             let content = UNMutableNotificationContent()
             content.title = "No glucose data"
-            content.body = "No reading for \(config.minutes) min. Check the sensor and Bluetooth."
-            content.sound = SoundCatalog.notificationSound(for: config.sound, critical: config.isCritical && criticalAllowed, volume: 1)
+            content.body = MissingDataAlert.message(firingAt: date, lastReading: lastReading)
+            let sound = SoundCatalog.playable(config.sound, fallback: .tune(name: "chime"))
+            content.sound = SoundCatalog.notificationSound(for: sound, critical: config.isCritical && criticalAllowed, volume: 1)
             content.interruptionLevel = config.isCritical && criticalAllowed ? .critical : .timeSensitive
             schedule(id: ids[index], content: content, at: date)
         }
     }
 
     func cancelMissingData() {
-        center.removePendingNotificationRequests(withIdentifiers: (0..<MissingDataAlert.maxScheduledNotifications).map { "\(Self.missingDataPrefix)\($0)" })
+        center.removePendingNotificationRequests(withIdentifiers: Self.missingDataIDs)
+    }
+
+    /// Clears "No glucose data" notifications already on the Lock Screen once readings are back.
+    func clearDeliveredMissingData() {
+        center.removeDeliveredNotifications(withIdentifiers: Self.missingDataIDs)
+    }
+
+    private static var sensorReminderIDs: [String] {
+        (0..<5).map { "\(sensorPrefix)\($0)" } + ["sensor-warmup"]
+    }
+
+    /// Cancels the sensor-ending reminders and "Sensor ready", pending and delivered (the sensor
+    /// was forgotten, or it ended and the app says so itself).
+    func cancelSensorReminders() {
+        center.removePendingNotificationRequests(withIdentifiers: Self.sensorReminderIDs)
+        center.removeDeliveredNotifications(withIdentifiers: Self.sensorReminderIDs)
+    }
+
+    /// Removes everything this app has shown or scheduled (Delete all data).
+    func removeAll() {
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
     }
 
     func scheduleSensorReminders(_ reminders: [SensorLifecycle.Reminder]) {
@@ -161,7 +193,9 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         for (index, (date, when)) in reminders.enumerated() where date > Date() {
             let content = UNMutableNotificationContent()
             content.title = "Glucose app expires \(when)"
-            content.body = "Re-install it with Sideloadly before then, or the app stops opening and alerting."
+            content.body = ProvisioningProfile.isTestFlight
+                ? "Install a newer build from TestFlight before then, or the app stops opening and alerting."
+                : "Re-install it with Sideloadly before then, or the app stops opening and alerting."
             content.sound = .default
             content.interruptionLevel = .timeSensitive
             schedule(id: "\(Self.signaturePrefix)\(index)", content: content, at: date)
