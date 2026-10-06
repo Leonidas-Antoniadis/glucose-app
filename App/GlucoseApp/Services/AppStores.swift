@@ -34,7 +34,7 @@ struct AppStores {
         sensorHistory = JSONFileStore(url: directory.appendingPathComponent("sensor-history.json"))
         savedCaptures = JSONFileStore(url: directory.appendingPathComponent("saved-captures.json"))
         alertState = JSONFileStore(url: directory.appendingPathComponent("alert-state.json"))
-        archive =try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
+        archive = try? ReadingArchive(directory: directory.appendingPathComponent("readings", isDirectory: true))
         capturesURL = directory.appendingPathComponent("captures.log")
 
         // Version 0.1 kept settings directly in Application Support.
