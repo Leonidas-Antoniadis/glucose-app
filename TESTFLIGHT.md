@@ -53,7 +53,7 @@ You'll get two emails from Apple:
 | Invitation link opens a web page | Install TestFlight first, then tap the link again on the iPhone. |
 | No alerts | Settings → Notifications → Glucose → allow, and check that Focus modes aren't silencing it. |
 | "No reading since …" | Keep the phone within a few meters of the sensor. If LibreLink was used to scan the sensor, tap **Pair again**. Tap **Scan sensor** to fill the gap (the sensor keeps 8 hours). |
-| Pairing fails | Hold the phone still on the sensor for a few seconds and try again. If it keeps failing, open **Sensor → Raw sensor data**: the failed read is kept there. Tap **Prepare file to share** and send it privately. It contains your sensor's ID. |
+| Pairing fails | Hold the top of the phone still on the sensor until the scan finishes, and try again. The message says which step stopped (connecting, identifying the sensor, reading its memory, or switching its Bluetooth): send a screenshot of it. If the sensor's memory was read, the failed read is also kept in **Sensor → Raw sensor data**. Tap **Prepare file to share** and send it privately. It contains your sensor's ID. |
 
 ## For the owner: publishing a build
 
