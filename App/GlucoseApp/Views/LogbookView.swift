@@ -240,7 +240,7 @@ struct AddLogEntryView: View {
                     }
                 } else {
                     Section {
-                        Text("Calibrate only when glucose is steady (flat arrow). Blood glucose values you don't use for calibration measure the sensor's accuracy instead. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
+                        Text("Calibrate only when glucose is steady (flat arrow). Every blood glucose value also measures the sensor's accuracy, against what the app showed before it. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

@@ -92,8 +92,7 @@ public struct AccuracyReport: Hashable, Sendable {
     public init(fingersticks: [FingerstickEntry], readings: [GlucoseReading], maxGapMinutes: Double = 5,
                 includeCalibrationPoints: Bool = false) {
         let sorted = readings.sorted { $0.timestamp < $1.timestamp }
-        // A stick offered for calibration isn't an independent check, even one refused.
-        let checks = fingersticks.filter { includeCalibrationPoints || (!$0.usedForCalibration && $0.offeredForCalibration != true) }
+        let checks = fingersticks.filter { includeCalibrationPoints || Self.isScored($0) }
         let pairs = checks.compactMap { stick -> Pair? in
             guard let index = Self.latestIndex(atOrBefore: stick.date, in: sorted, serial: stick.sensorSerial,
                                                maxGap: maxGapMinutes * 60) else { return nil }
@@ -109,6 +108,17 @@ public struct AccuracyReport: Hashable, Sendable {
                         sensorDay: reading.minuteIndex / 1440 + 1, ratePerMinute: Trend.ratePerMinute(window))
         }
         self.init(pairs: pairs, unpairedCount: checks.count - pairs.count)
+    }
+
+    /// Whether a fingerstick counts as an accuracy check. One used to calibrate counts, against the
+    /// value shown before it was used (saved with it): leaving calibrations out would leave out
+    /// exactly the big misses, when you calibrate because the sensor is far off. Older calibrations
+    /// without that saved value don't count, since their readings were refitted to them. A stick
+    /// that was offered but not used (far off until a second one agrees, say, which may be a meter
+    /// error) doesn't count either; the stick that confirms it does.
+    public static func isScored(_ stick: FingerstickEntry) -> Bool {
+        if stick.usedForCalibration { return stick.appMgdL != nil }
+        return stick.offeredForCalibration != true
     }
 
     // MARK: Overall

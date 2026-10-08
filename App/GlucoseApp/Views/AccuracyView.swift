@@ -23,7 +23,7 @@ struct AccuracyView: View {
                              ? "Accuracy is measured against your own sensor, so it isn't shown for the demo."
                              : report.unpairedCount > 0
                                 ? "\(report.unpairedCount) fingerstick\(report.unpairedCount == 1 ? " has" : "s have") no sensor reading in the 5 minutes before, for example during a Bluetooth gap, so there's nothing to compare yet."
-                                : "Add a fingerstick without \"Use to calibrate\". Each one is compared with the sensor value at that moment. Type what LibreLink showed too, to compare the two apps.")
+                                : "Add a fingerstick. Each one is compared with the sensor value shown at that moment, before any calibration it makes. Type what LibreLink showed too, to compare the two apps.")
                     }
                 }
             } else {
@@ -93,11 +93,20 @@ struct AccuracyView: View {
                 .accessibilityElement(children: .combine)
             }
         } footer: {
-            Text("Only fingersticks not used for calibration count: a calibration point always matches."
-                 + (report.unpairedCount > 0
-                    ? " \(report.unpairedCount) more had no sensor reading in the 5 minutes before and aren't counted."
-                    : ""))
+            Text(countedFootnote(report))
         }
+    }
+
+    /// Which fingersticks the numbers count, and which they leave out.
+    private func countedFootnote(_ report: AccuracyReport) -> String {
+        var text = "Every fingerstick counts, compared with the value shown before it: one used to calibrate is scored against the value before calibrating, so the misses you calibrated away still count. A fingerstick held back as a possible meter error counts only through the one that confirms it."
+        if model.fingersticks.contains(where: { $0.usedForCalibration && $0.appMgdL == nil }) {
+            text += " Calibrations from before version 0.4.5 aren't counted: the value shown before them wasn't saved."
+        }
+        if report.unpairedCount > 0 {
+            text += " \(report.unpairedCount) more had no sensor reading in the 5 minutes before and aren't counted."
+        }
+        return text
     }
 
     @ViewBuilder

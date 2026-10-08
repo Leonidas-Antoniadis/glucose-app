@@ -102,7 +102,7 @@ struct SensorView: View {
                     Text("Accuracy is measured against your own sensor, so it isn't shown for the demo.")
                         .foregroundStyle(.secondary)
                 } else {
-                    Text("Add fingersticks without \"Use to calibrate\" to measure accuracy.")
+                    Text("Add fingersticks to measure accuracy.")
                         .foregroundStyle(.secondary)
                 }
                 NavigationLink {

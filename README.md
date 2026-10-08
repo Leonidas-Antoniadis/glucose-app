@@ -109,7 +109,7 @@ For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.
    - If LibreLink is on the same iPhone, turn off its Bluetooth (iPhone Settings → LibreLink → Bluetooth). Otherwise it keeps trying to connect to the sensor and breaks this app's connection ([xDrip4iOS requires the same](https://xdrip4ios.readthedocs.io/en/latest/connect/cgm/)). LibreLink can still scan by NFC.
    - Or skip LibreLink: apply a new sensor, then tap **Start a new sensor (NFC)**. The app starts it and pairs it in one scan. This is experimental (not yet tried on a real sensor), starting can't be undone, and LibreLink may not give alarms for a sensor it didn't start. If you might want to switch back to LibreLink, start the sensor there instead.
 3. Add a **fingerstick** when glucose is steady, and at least once a day. Until then values are rough estimates (raw ÷ 8.5).
-4. Add some fingersticks *without* "Use to calibrate" to measure accuracy (MARD).
+4. Every fingerstick also measures accuracy (MARD), including the ones used to calibrate: those are scored against the value shown before calibrating, so the misses you calibrate away still count.
 
 The protocol follows community reverse-engineering (DiaBLE, LibreTransmitter). The tests check it against LibreTransmitter's public captures from real Libre 2 sensors and against values computed with the reference code, but it hasn't been tried on a sensor of our own yet. Before taking over a sensor, the app checks that its data decodes; if it doesn't, nothing on the sensor changes and LibreLink keeps working. Failed reads are kept under **Sensor → Raw sensor data** so they can be shared to fix decoding. Keep that file private: it contains your sensor's ID.
 

@@ -111,6 +111,24 @@ final class AccuracyTests: XCTestCase {
         XCTAssertEqual(report.pairs.first?.referenceMgdL, 104)
     }
 
+    func testCalibrationsCountAgainstTheValueShownBeforeThem() {
+        let readings = (0..<20).map { TestSupport.reading(100, minute: $0) }
+        // Calibrated because the sensor was far off: scored against the 130 shown before it, not
+        // against the refitted reading, so the miss counts.
+        let calibration = FingerstickEntry(date: readings[5].timestamp, mgdL: 100, usedForCalibration: true,
+                                           offeredForCalibration: true, appMgdL: 130)
+        // An older calibration without that saved value can't be scored: its reading was refitted to it.
+        let old = FingerstickEntry(date: readings[10].timestamp, mgdL: 100, usedForCalibration: true,
+                                   offeredForCalibration: true)
+        let report = AccuracyReport(fingersticks: [calibration, old], readings: readings)
+        XCTAssertEqual(report.pairs.count, 1)
+        XCTAssertEqual(report.pairs.first?.sensorMgdL, 130)
+        XCTAssertEqual(report.mard ?? 0, 30, accuracy: 0.001)
+        XCTAssertEqual(report.unpairedCount, 0, "a calibration that can't be scored isn't an unpaired check")
+        XCTAssertTrue(AccuracyReport.isScored(calibration))
+        XCTAssertFalse(AccuracyReport.isScored(old))
+    }
+
     func testPairsUseTheReadingAtOrBeforeTheCheckAndTheSavedValue() {
         let readings = [TestSupport.reading(100, minute: 0), TestSupport.reading(130, minute: 4)]
         // 1 minute after the first reading, 3 before the second: the earlier one, never the later.

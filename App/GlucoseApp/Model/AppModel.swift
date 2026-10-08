@@ -841,8 +841,9 @@ final class AppModel {
         var pointID: UUID?
         var message = "Fingerstick saved."
         // What the app showed for that moment (the newest reading at or before it), kept with the
-        // check: a later calibration rewrites the readings around it.
-        let shown: Double? = calibrate ? nil : readings.last(where: {
+        // check: a calibration, this one included, rewrites the readings around it. Taken before
+        // calibrating, so a stick used to calibrate is scored against what was shown before it.
+        let shown: Double? = readings.last(where: {
             $0.timestamp <= date && date.timeIntervalSince($0.timestamp) <= 5 * 60
         })?.mgdL
         if calibrate {
@@ -931,7 +932,7 @@ final class AppModel {
     /// readings in memory. Older readings come from the archive, off the main thread.
     func fullAccuracyReport() async -> AccuracyReport {
         guard !isDemo || ScreenshotMode.isActive else { return AccuracyReport(pairs: []) }
-        let sticks = fingersticks.filter { !$0.usedForCalibration && $0.offeredForCalibration != true }
+        let sticks = fingersticks.filter(AccuracyReport.isScored)
         let inMemory = readings
         guard let oldest = sticks.map(\.date).min() else { return AccuracyReport(pairs: []) }
         let archive = stores.archive
