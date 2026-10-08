@@ -240,9 +240,14 @@ struct AddLogEntryView: View {
                     }
                 } else {
                     Section {
-                        Text("Calibrate only when glucose is steady (flat arrow). Every blood glucose value also measures the sensor's accuracy, against what the app showed before it. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
+                        Text("Calibrate only when glucose is steady (flat arrow), and after a sensor's first days only when a check is far off. Every blood glucose value also measures the sensor's accuracy, against what the app showed before it. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                        NavigationLink {
+                            CalibrationGuideView()
+                        } label: {
+                            Label("When to calibrate", systemImage: "book")
+                        }
                     }
                 }
                 if let result {

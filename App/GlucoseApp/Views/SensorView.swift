@@ -79,15 +79,20 @@ struct SensorView: View {
                 Section {
                     MetricRow(label: "Calibration",
                               value: record.calibration.isCalibrated ? "\(record.calibration.pointCount) fingerstick(s)" : "Not calibrated",
-                              warning: record.calibration.needsCalibration(now: Date()))
+                              warning: !record.calibration.isCalibrated)
                     if let last = record.calibration.lastCalibration {
                         MetricRow(label: "Last calibration", value: last.formatted(.relative(presentation: .named)))
                     }
                     Button("Add fingerstick", systemImage: "drop") { showingFingerstick = true }
+                    NavigationLink {
+                        CalibrationGuideView()
+                    } label: {
+                        Label("Calibration guide", systemImage: "book")
+                    }
                 } header: {
                     Text("Calibration")
                 } footer: {
-                    Text("Abbott's conversion algorithm isn't public, so this app calibrates the sensor's raw signal against your fingersticks. Calibrate at least once a day.")
+                    Text("Abbott's conversion algorithm isn't public, so this app calibrates the sensor's raw signal against your fingersticks. Calibrate 2–3 times in a sensor's first days, then check once a day and calibrate only when a check is far off.")
                 }
             }
 

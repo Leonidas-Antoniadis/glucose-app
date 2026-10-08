@@ -36,7 +36,7 @@ You'll get two emails from Apple:
    - **If LibreLink is on this iPhone, turn off its Bluetooth:** iPhone Settings → LibreLink → Bluetooth off. Otherwise LibreLink keeps trying to connect to the sensor and breaks Glucose's connection. LibreLink can still scan by NFC.
    - After a signal loss, Glucose reconnects by itself (it can take a few minutes). Pair again only after LibreLink or the reader scanned the sensor.
    - To go back to LibreLink, turn its Bluetooth back on and scan the sensor with LibreLink. Glucose then shows "No reading" with a **Pair again** button.
-3. Enter a **blood glucose** value (fingerstick) when your glucose is steady, and at least once a day. Until you do, values are rough estimates.
+3. Calibrate with a **blood glucose** value (fingerstick) 2–3 times in the sensor's first days, when glucose is steady, ideally one lower and one higher. Until you do, values are rough estimates. After that, add one check a day with "Use to calibrate" off, and calibrate again only when a check is far off. **Settings → Help → Calibration and accuracy guide** explains why.
 4. Check **Alerts** and make sure at least one low alert at or below 60 mg/dL is on.
 
 **Don't swipe the app closed.** If you do, iOS won't relaunch it: readings and alerts stop until you open it again. Leaving it in the background is fine; iOS wakes it for each reading. After restarting the phone, open the app once.

@@ -113,7 +113,7 @@ jobs:
           shoot -tab 0 -select; xcrun simctl io "$UDID" screenshot screenshots/7-home-chart-selected.png
           shoot -tab 0 -marker; xcrun simctl io "$UDID" screenshot screenshots/7-home-chart-marker.png
           N=8
-          for SCREEN in add quick sensor raw packet nfc history rule battery accuracy wear bedtime; do
+          for SCREEN in add quick sensor raw packet nfc history rule battery accuracy wear bedtime guide; do
             shoot -screen $SCREEN; xcrun simctl io "$UDID" screenshot "screenshots/$N-$SCREEN.png"
             N=$((N+1))
           done

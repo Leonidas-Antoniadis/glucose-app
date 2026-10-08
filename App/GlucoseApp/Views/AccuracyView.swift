@@ -16,6 +16,13 @@ struct AccuracyView: View {
                     misses(report)
                     errorGrid(report)
                     breakdown(report, overall: mard)
+                    Section {
+                        NavigationLink {
+                            CalibrationGuideView()
+                        } label: {
+                            Label("What's a good MARD, and when to calibrate", systemImage: "book")
+                        }
+                    }
                 } else {
                     ContentUnavailableView {
                         Label(report.unpairedCount > 0 ? "No checks to compare" : "No checks yet", systemImage: "drop")

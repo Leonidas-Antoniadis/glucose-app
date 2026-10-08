@@ -76,6 +76,24 @@ struct SettingsView: View {
                     Text("Hide values on Lock Screen: alert notifications, the Live Activity and Lock Screen widgets say there's an alert without showing glucose. Alerts still sound.")
                 }
 
+                Section {
+                    NavigationLink {
+                        CalibrationGuideView()
+                    } label: {
+                        Label("Calibration and accuracy guide", systemImage: "book")
+                    }
+                    Link(destination: URL(string: "https://xdrip.readthedocs.io/en/latest/")!) {
+                        Label("xDrip+ documentation", systemImage: "books.vertical")
+                    }
+                    Link(destination: URL(string: "https://xdrip4ios.readthedocs.io/en/latest/")!) {
+                        Label("xDrip4iOS documentation", systemImage: "iphone")
+                    }
+                } header: {
+                    Text("Help")
+                } footer: {
+                    Text("This app follows community practice from xDrip+ (Android) and xDrip4iOS, which read Libre 2 sensors the same way. Their documentation opens in Safari.")
+                }
+
                 Section("Diagnostics") {
                     NavigationLink("Raw sensor data") { RawDataView() }
                     NavigationLink("Sensor history") { SensorHistoryView() }

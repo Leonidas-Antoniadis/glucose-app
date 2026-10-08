@@ -131,8 +131,11 @@ struct StatusBanners: View {
                     if !record.calibration.isCalibrated {
                         ActionBanner(systemImage: "drop", text: "Values are uncalibrated estimates. Add a fingerstick to calibrate.",
                                      actions: [("Add fingerstick", { addingFingerstick = true })])
-                    } else if record.calibration.needsCalibration(now: Date()) {
-                        ActionBanner(systemImage: "drop", text: "Last calibration is over a day old. Add a fingerstick.",
+                    } else if let last = model.fingersticks.map(\.date).max() ?? record.calibration.lastCalibration,
+                              now.timeIntervalSince(last) > 24 * 3600 {
+                        // A daily check, not a daily calibration: calibrating often pulls the fit off.
+                        ActionBanner(systemImage: "drop",
+                                     text: "No fingerstick in over a day. Add one to check accuracy; calibrate only if it's far off.",
                                      actions: [("Add fingerstick", { addingFingerstick = true })])
                     }
                 } else {
