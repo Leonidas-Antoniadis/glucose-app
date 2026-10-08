@@ -9,7 +9,8 @@ enum RangeColor {
 }
 
 /// Glucose history with the 70-180 target band. Swipe sideways to go back in time; touch and hold,
-/// then slide, to read past values together with nearby notes and fingersticks.
+/// then slide, to read past values together with nearby notes and fingersticks. Tap a logged item's
+/// icon to see what it was, when, and glucose then and now.
 struct GlucoseChart: View {
     let readings: [GlucoseReading]
     let unit: GlucoseUnit
@@ -22,6 +23,8 @@ struct GlucoseChart: View {
 
     @State private var selectedDate: Date?
     @State private var scrollPosition = Date.distantPast
+    /// The tapped icon group whose details are shown.
+    @State private var openMarker: String?
     @Environment(\.scenePhase) private var scenePhase
 
     private struct LinePoint: Identifiable {
@@ -30,6 +33,18 @@ struct GlucoseChart: View {
         let value: Double
         let segment: Int
     }
+
+    /// Logged items (or fingersticks) close enough on screen to share one tap target.
+    private struct MarkerGroup: Identifiable {
+        let id: String
+        let date: Date
+        let point: CGPoint
+        var entries: [LogEntry] = []
+        var sticks: [FingerstickEntry] = []
+    }
+
+    /// Size of an icon's tap target, in points.
+    private static let markerTarget: CGFloat = 32
 
     private var visibleSeconds: TimeInterval { visibleHours * 3600 }
 
@@ -125,11 +140,22 @@ struct GlucoseChart: View {
                 .chartXVisibleDomain(length: visibleSeconds)
                 .chartScrollPosition(x: $scrollPosition)
                 .chartXSelection(value: $selectedDate)
+                // Tap targets over the visible icons only, so swiping and touch-and-hold work everywhere else.
+                .chartOverlay { proxy in
+                    GeometryReader { geometry in
+                        if let plotFrame = proxy.plotFrame {
+                            let plot = geometry[plotFrame]
+                            ForEach(markerGroups(proxy: proxy, plot: plot, markerY: markerY)) { group in
+                                markerButton(group)
+                            }
+                        }
+                    }
+                }
                 .accessibilityLabel("Glucose chart")
             }
             // Under the chart, so it never covers the axis labels or the note icons.
             HStack(alignment: .center) {
-                Text("Swipe to go back in time. Touch and hold, then slide, to read past values.")
+                Text("Tap an icon to see what you logged. Swipe to go back in time; touch and hold, then slide, to read past values.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 if isScrolledBack(end: end) {
@@ -144,6 +170,12 @@ struct GlucoseChart: View {
             jumpToNow(end: end)
             if ScreenshotMode.arguments.contains("-select") {
                 selectedDate = lastReading.addingTimeInterval(-50 * 60)
+            }
+            if ScreenshotMode.arguments.contains("-marker") {
+                // After the first layout, so the icon's tap target exists to anchor the details.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    openMarker = entries.max { $0.date < $1.date }?.id.uuidString
+                }
             }
         }
         .onChange(of: visibleHours) { jumpToNow(end: end) }
@@ -199,6 +231,137 @@ struct GlucoseChart: View {
 
     private func fingerstickNear(_ date: Date) -> FingerstickEntry? {
         fingersticks.first { abs($0.date.timeIntervalSince(date)) <= 15 * 60 }
+    }
+
+    /// The icons in the visible window and where they are on screen. Icons closer than a
+    /// fingertip share one target, which opens all of them.
+    private func markerGroups(proxy: ChartProxy, plot: CGRect, markerY: Double) -> [MarkerGroup] {
+        let visible = scrollPosition.addingTimeInterval(-60)...scrollPosition.addingTimeInterval(visibleSeconds + 60)
+        func location(_ date: Date, _ value: Double) -> CGPoint? {
+            guard visible.contains(date), let x = proxy.position(forX: date), let y = proxy.position(forY: value) else { return nil }
+            return CGPoint(x: plot.minX + x, y: plot.minY + y)
+        }
+        var groups: [MarkerGroup] = []
+        func add(_ date: Date, at point: CGPoint, id: String, _ fill: (inout MarkerGroup) -> Void) {
+            if let index = groups.lastIndex(where: {
+                abs($0.point.x - point.x) < Self.markerTarget && abs($0.point.y - point.y) < Self.markerTarget
+            }) {
+                fill(&groups[index])
+            } else {
+                var group = MarkerGroup(id: id, date: date, point: point)
+                fill(&group)
+                groups.append(group)
+            }
+        }
+        for entry in entries.sorted(by: { $0.date < $1.date }) {
+            if let point = location(entry.date, markerY) {
+                add(entry.date, at: point, id: entry.id.uuidString) { $0.entries.append(entry) }
+            }
+        }
+        for stick in fingersticks.sorted(by: { $0.date < $1.date }) {
+            if let point = location(stick.date, unit.fromMgdL(stick.mgdL)) {
+                add(stick.date, at: point, id: stick.id.uuidString) { $0.sticks.append(stick) }
+            }
+        }
+        return groups
+    }
+
+    private func markerButton(_ group: MarkerGroup) -> some View {
+        Button {
+            openMarker = group.id
+        } label: {
+            Color.clear
+                .frame(width: Self.markerTarget, height: Self.markerTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel((group.entries.map(\.title)
+            + group.sticks.map { "Fingerstick \(unit.format(mgdL: $0.mgdL, includeSymbol: true))" }).joined(separator: ", "))
+        .accessibilityValue(group.date.formatted(date: .omitted, time: .shortened))
+        // Before `position`, so the details point at the icon rather than the middle of the chart.
+        .popover(isPresented: Binding(
+            get: { openMarker == group.id },
+            set: { if !$0, openMarker == group.id { openMarker = nil } }
+        )) {
+            MarkerDetails(entries: group.entries, sticks: group.sticks, unit: unit,
+                          then: reading(near: group.date), latest: readings.last)
+                .presentationCompactAdaptation(.popover)
+        }
+        .position(group.point)
+    }
+
+    /// The reading closest to a logged item, if there is one within 10 minutes.
+    private func reading(near date: Date) -> GlucoseReading? {
+        guard let match = nearest(to: date), abs(match.timestamp.timeIntervalSince(date)) <= 10 * 60 else { return nil }
+        return match
+    }
+}
+
+/// What was logged at a tapped icon, and how glucose went from then to now.
+struct MarkerDetails: View {
+    let entries: [LogEntry]
+    let sticks: [FingerstickEntry]
+    let unit: GlucoseUnit
+    let then: GlucoseReading?
+    let latest: GlucoseReading?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(entries) { entry in
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(entry.title, systemImage: entry.symbolName)
+                        .font(.subheadline.weight(.semibold))
+                    Text(Self.when(entry.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !entry.text.isEmpty {
+                        Text(entry.text).font(.caption)
+                    }
+                }
+            }
+            ForEach(sticks) { stick in
+                VStack(alignment: .leading, spacing: 2) {
+                    Label("Fingerstick \(unit.format(mgdL: stick.mgdL, includeSymbol: true))", systemImage: "drop.fill")
+                        .font(.subheadline.weight(.semibold))
+                    Text(Self.when(stick.date))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let then {
+                Divider()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Glucose then: \(unit.formatReading(mgdL: then.mgdL, includeSymbol: true))")
+                    if let latest, latest.timestamp.timeIntervalSince(then.timestamp) >= 5 * 60 {
+                        Text("\(latestLabel(latest)): \(unit.formatReading(mgdL: latest.mgdL, includeSymbol: true)) (\(change(latest.mgdL - then.mgdL)))")
+                    }
+                }
+                .font(.caption)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(14)
+        // A set width: popovers size to their content, and long notes wrap instead of widening it.
+        .frame(width: 260, alignment: .leading)
+    }
+
+    /// "4:35 PM · 15m ago", with the weekday when it wasn't today.
+    static func when(_ date: Date) -> String {
+        let time = Calendar.current.isDateInToday(date)
+            ? date.formatted(date: .omitted, time: .shortened)
+            : date.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+        return "\(time) · \(LastLoggedTiles.ago(date, now: Date()))"
+    }
+
+    /// "Now" while readings are current; otherwise the time of the last one.
+    private func latestLabel(_ reading: GlucoseReading) -> String {
+        Date().timeIntervalSince(reading.timestamp) < 15 * 60
+            ? "Now"
+            : "Latest (\(reading.timestamp.formatted(date: .omitted, time: .shortened)))"
+    }
+
+    private func change(_ mgdL: Double) -> String {
+        (mgdL < 0 ? "−" : "+") + unit.format(mgdL: abs(mgdL)) + " since"
     }
 }
 
