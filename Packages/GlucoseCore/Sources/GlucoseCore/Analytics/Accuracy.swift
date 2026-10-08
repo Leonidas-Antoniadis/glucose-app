@@ -1,6 +1,6 @@
 import Foundation
 
-/// Sensor accuracy against fingersticks that were *not* used for calibration.
+/// Sensor accuracy against fingersticks, each compared with what the app showed before it.
 public struct AccuracyReport: Hashable, Sendable {
     /// One fingerstick and the sensor value closest to it.
     public struct Pair: Hashable, Sendable {
@@ -14,9 +14,12 @@ public struct AccuracyReport: Hashable, Sendable {
         public let sensorDay: Int?
         /// How fast glucose was moving at the time, in mg/dL per minute.
         public let ratePerMinute: Double?
+        /// The fingerstick was then used to calibrate (`sensorMgdL` is still the value from before).
+        public let usedForCalibration: Bool
 
         public init(date: Date, referenceMgdL: Double, sensorMgdL: Double, libreLinkMgdL: Double? = nil,
-                    sensorSerial: String? = nil, sensorDay: Int? = nil, ratePerMinute: Double? = nil) {
+                    sensorSerial: String? = nil, sensorDay: Int? = nil, ratePerMinute: Double? = nil,
+                    usedForCalibration: Bool = false) {
             self.date = date
             self.referenceMgdL = referenceMgdL
             self.sensorMgdL = sensorMgdL
@@ -24,6 +27,7 @@ public struct AccuracyReport: Hashable, Sendable {
             self.sensorSerial = sensorSerial
             self.sensorDay = sensorDay
             self.ratePerMinute = ratePerMinute
+            self.usedForCalibration = usedForCalibration
         }
 
         /// Sensor minus meter, in mg/dL: negative when the sensor reads low.
@@ -105,7 +109,8 @@ public struct AccuracyReport: Hashable, Sendable {
             }
             return Pair(date: stick.date, referenceMgdL: stick.mgdL, sensorMgdL: stick.appMgdL ?? reading.mgdL,
                         libreLinkMgdL: stick.libreLinkMgdL, sensorSerial: reading.sensorSerial,
-                        sensorDay: reading.minuteIndex / 1440 + 1, ratePerMinute: Trend.ratePerMinute(window))
+                        sensorDay: reading.minuteIndex / 1440 + 1, ratePerMinute: Trend.ratePerMinute(window),
+                        usedForCalibration: stick.usedForCalibration)
         }
         self.init(pairs: pairs, unpairedCount: checks.count - pairs.count)
     }
@@ -129,6 +134,11 @@ public struct AccuracyReport: Hashable, Sendable {
     public var within15_15: Double? {
         guard !pairs.isEmpty else { return nil }
         return Double(pairs.filter(\.isWithin15_15).count) / Double(pairs.count)
+    }
+
+    /// The checks outside the 15 mg/dL / 15 % band, newest first: the times the sensor was off.
+    public var misses: [Pair] {
+        pairs.filter { !$0.isWithin15_15 }.sorted { $0.date > $1.date }
     }
 
     public var within20_20: Double? {

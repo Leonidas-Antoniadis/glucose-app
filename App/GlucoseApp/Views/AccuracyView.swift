@@ -13,6 +13,7 @@ struct AccuracyView: View {
             if let report {
                 if let mard = report.mard {
                     summary(report, mard: mard)
+                    misses(report)
                     errorGrid(report)
                     breakdown(report, overall: mard)
                 } else {
@@ -66,11 +67,13 @@ struct AccuracyView: View {
             .accessibilityElement(children: .combine)
             if let within = report.within15_15 {
                 MetricRow(label: "Within \(u.format(mgdL: 15, includeSymbol: true)) or 15 %",
-                          value: String(format: "%.0f %%", within * 100))
+                          value: String(format: "%.0f %% · %d of %d", within * 100,
+                                        report.pairs.count - report.misses.count, report.pairs.count))
             }
             if let within = report.within20_20 {
                 MetricRow(label: "Within \(u.format(mgdL: 20, includeSymbol: true)) or 20 %",
-                          value: String(format: "%.0f %%", within * 100))
+                          value: String(format: "%.0f %% · %d of %d", within * 100,
+                                        report.pairs.filter(\.isWithin20_20).count, report.pairs.count))
             }
             if let bias = report.biasMgdL {
                 MetricRow(label: "Bias", value: biasText(bias))
@@ -94,6 +97,42 @@ struct AccuracyView: View {
             }
         } footer: {
             Text(countedFootnote(report))
+        }
+    }
+
+    /// Each check where the sensor was off by more than 15 mg/dL (below 100) or 15 %, newest first.
+    @ViewBuilder
+    private func misses(_ report: AccuracyReport) -> some View {
+        let u = model.unit
+        let misses = report.misses
+        Section {
+            if misses.isEmpty {
+                Text("None so far: every check was within \(u.format(mgdL: 15, includeSymbol: true)) or 15 %.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(Array(misses.prefix(30).enumerated()), id: \.offset) { _, pair in
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pair.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()))
+                        Text("Meter \(u.format(mgdL: pair.referenceMgdL)) · app \(u.format(mgdL: pair.sensorMgdL))"
+                             + (pair.usedForCalibration ? " · then calibrated" : ""))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text((pair.difference < 0 ? "−" : "+") + u.format(mgdL: abs(pair.difference), includeSymbol: true))
+                        .monospacedDigit()
+                        .foregroundStyle(pair.isWithin20_20 ? Color.orange : Color.red)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if misses.count > 30 {
+                Text("And \(misses.count - 30) older.").font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Times it was off · \(misses.count) of \(report.pairs.count)")
+        } footer: {
+            Text("Off means more than \(u.format(mgdL: 15, includeSymbol: true)) away below \(u.format(mgdL: 100, includeSymbol: true)), or more than 15 % above. Orange: still within \(u.format(mgdL: 20, includeSymbol: true)) or 20 %. Red: further off.")
         }
     }
 

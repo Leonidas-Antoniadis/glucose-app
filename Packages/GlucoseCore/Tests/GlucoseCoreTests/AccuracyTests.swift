@@ -125,6 +125,8 @@ final class AccuracyTests: XCTestCase {
         XCTAssertEqual(report.pairs.first?.sensorMgdL, 130)
         XCTAssertEqual(report.mard ?? 0, 30, accuracy: 0.001)
         XCTAssertEqual(report.unpairedCount, 0, "a calibration that can't be scored isn't an unpaired check")
+        XCTAssertEqual(report.pairs.first?.usedForCalibration, true)
+        XCTAssertEqual(report.misses.count, 1, "30 % off is outside 15 mg/dL or 15 %")
         XCTAssertTrue(AccuracyReport.isScored(calibration))
         XCTAssertFalse(AccuracyReport.isScored(old))
     }
