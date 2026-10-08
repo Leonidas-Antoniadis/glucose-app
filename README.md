@@ -106,6 +106,7 @@ For family members on your Apple Developer team, see [TESTFLIGHT.md](TESTFLIGHT.
 
 1. Start the sensor with LibreLink or the Abbott reader and let it warm up (60 min).
 2. In the app: Home → sensor icon → **Pair sensor (NFC)**. LibreLink's alarms stop for that sensor from now on.
+   - If LibreLink is on the same iPhone, turn off its Bluetooth (iPhone Settings → LibreLink → Bluetooth). Otherwise it keeps trying to connect to the sensor and breaks this app's connection ([xDrip4iOS requires the same](https://xdrip4ios.readthedocs.io/en/latest/connect/cgm/)). LibreLink can still scan by NFC.
    - Or skip LibreLink: apply a new sensor, then tap **Start a new sensor (NFC)**. The app starts it and pairs it in one scan. This is experimental (not yet tried on a real sensor), starting can't be undone, and LibreLink may not give alarms for a sensor it didn't start. If you might want to switch back to LibreLink, start the sensor there instead.
 3. Add a **fingerstick** when glucose is steady, and at least once a day. Until then values are rough estimates (raw ÷ 8.5).
 4. Add some fingersticks *without* "Use to calibrate" to measure accuracy (MARD).
@@ -119,10 +120,10 @@ The protocol follows community reverse-engineering (DiaBLE, LibreTransmitter). T
 | Taking over a sensor that's already running | No new warm-up. Pairing imports the last 8 hours right away; live readings start within 1-2 minutes. Add a fingerstick soon, since values are estimates until calibrated. |
 | Pairing a sensor that's still warming up | Readings start after its first 60 minutes, and a "Sensor ready" notification arrives then. |
 | Alerts in both apps? | No. The sensor streams to one app. After pairing here, LibreLink's alarms stop for that sensor. |
-| Going back to LibreLink | Scan the sensor with LibreLink; it usually takes the sensor back (not guaranteed). This app then shows "No reading since …" with a **Pair again** button. |
+| Going back to LibreLink | Turn LibreLink's Bluetooth back on, then scan the sensor with LibreLink; it usually takes the sensor back (not guaranteed). This app then shows "No reading since …" with a **Pair again** button. |
 | Scanning again while connected | Safe: it only reads the 8-hour history, fills gaps and doesn't disturb the Bluetooth link. |
 | Pairing the same sensor again | Allowed; calibration is kept. |
-| Phone left out of range | It reconnects by itself when you're back. Each Bluetooth packet only covers the last ~45 minutes, so a banner offers an NFC scan to fill longer gaps (the sensor keeps 8 hours). |
+| Phone left out of range | It reconnects by itself when you're back (this can take a few minutes); no new pairing is needed. If a connection stays up but no data arrives for 4 minutes, the app drops and remakes it. Each Bluetooth packet only covers the last ~45 minutes, so a banner offers an NFC scan to fill longer gaps (the sensor keeps 8 hours). |
 | Phone restarted | iOS only reconnects after the app has been opened once; the scheduled "No glucose data" alert reminds you. |
 
 ### Raw sensor data

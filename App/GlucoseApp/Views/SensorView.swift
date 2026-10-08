@@ -72,7 +72,7 @@ struct SensorView: View {
             } header: {
                 Text("Pairing")
             } footer: {
-                Text("Pair a sensor that's already running (started with LibreLink or the Abbott reader): this app takes over the Bluetooth connection, so LibreLink's alarms stop for this sensor. Or start a brand-new sensor here instead of in LibreLink. European Libre 2 and 2 Plus only.")
+                Text("Pair a sensor that's already running (started with LibreLink or the Abbott reader): this app takes over the Bluetooth connection, so LibreLink's alarms stop for this sensor. Or start a brand-new sensor here instead of in LibreLink. European Libre 2 and 2 Plus only.\n\nIf LibreLink is on this iPhone, turn off its Bluetooth (iPhone Settings → LibreLink → Bluetooth). Otherwise it keeps trying to connect to the sensor and breaks this app's connection.")
             }
 
             if let record = sensor.record {

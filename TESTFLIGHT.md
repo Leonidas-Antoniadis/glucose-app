@@ -33,7 +33,9 @@ You'll get two emails from Apple:
 2. In Glucose: **Home → sensor icon → Pair sensor (NFC)**, then hold the top of the iPhone against the sensor. Allow **Bluetooth** when asked.
    - The app first checks that it can read your sensor. If it can't, nothing changes and LibreLink keeps working.
    - Once paired, LibreLink stops giving alarms for that sensor, so check your alerts in Glucose straight away.
-   - To go back to LibreLink, scan the sensor with LibreLink. Glucose then shows "No reading" with a **Pair again** button.
+   - **If LibreLink is on this iPhone, turn off its Bluetooth:** iPhone Settings → LibreLink → Bluetooth off. Otherwise LibreLink keeps trying to connect to the sensor and breaks Glucose's connection. LibreLink can still scan by NFC.
+   - After a signal loss, Glucose reconnects by itself (it can take a few minutes). Pair again only after LibreLink or the reader scanned the sensor.
+   - To go back to LibreLink, turn its Bluetooth back on and scan the sensor with LibreLink. Glucose then shows "No reading" with a **Pair again** button.
 3. Enter a **blood glucose** value (fingerstick) when your glucose is steady, and at least once a day. Until you do, values are rough estimates.
 4. Check **Alerts** and make sure at least one low alert at or below 60 mg/dL is on.
 
@@ -52,7 +54,7 @@ You'll get two emails from Apple:
 | "The requested app is not available" | The build is still processing. Try again in 15 minutes. |
 | Invitation link opens a web page | Install TestFlight first, then tap the link again on the iPhone. |
 | No alerts | Settings → Notifications → Glucose → allow, and check that Focus modes aren't silencing it. |
-| "No reading since …" | Keep the phone within a few meters of the sensor. If LibreLink was used to scan the sensor, tap **Pair again**. Tap **Scan sensor** to fill the gap (the sensor keeps 8 hours). |
+| "No reading since …" | Keep the phone within a few meters of the sensor, on the same side of the body; Glucose reconnects by itself. Check that LibreLink's Bluetooth is off (iPhone Settings → LibreLink). If LibreLink or the reader was used to scan the sensor, tap **Pair again**. Tap **Scan sensor** to fill the gap (the sensor keeps 8 hours). If it keeps happening, send screenshots of **Sensor → Signal** and **Gaps**, and **Sensor → Diagnostics → Connection log**. |
 | Pairing fails | Hold the top of the phone still on the sensor until the scan finishes, and try again. The message says which step stopped (connecting, identifying the sensor, reading its memory, or switching its Bluetooth): send a screenshot of it. If the sensor's memory was read, the failed read is also kept in **Sensor → Raw sensor data**. Tap **Prepare file to share** and send it privately. It contains your sensor's ID. |
 
 ## For the owner: publishing a build

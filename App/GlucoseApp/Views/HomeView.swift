@@ -155,7 +155,7 @@ struct StatusBanners: View {
         case .ended:
             return "No reading since \(time): the sensor has ended."
         default:
-            return "No reading since \(time). Keep the phone within a few meters of the sensor. If you scanned the sensor with LibreLink or the reader, it now sends to that app: tap Pair again to take it back. Scan to fill the gap."
+            return "No reading since \(time). Keep the phone within a few meters of the sensor; it reconnects by itself. If LibreLink is on this iPhone, turn off its Bluetooth in iPhone Settings. Tap Pair again only if you scanned the sensor with LibreLink or the reader. Scan to fill the gap."
         }
     }
 }
