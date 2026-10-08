@@ -36,6 +36,11 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     static let candidateTimeout: TimeInterval = 150
     /// How long a set-aside candidate is passed over before it is tried again.
     static let retryAfter: TimeInterval = 5 * 60
+    /// How long the paired sensor may stay connected without sending anything (it sends once a
+    /// minute) before the link is dropped and made again with a fresh unlock.
+    static let silentLinkTimeout: TimeInterval = 4 * 60
+    /// The shortest time between two such restarts, so a link that keeps failing doesn't spin.
+    static let restartInterval: TimeInterval = 60
 
     /// Called on the main queue.
     var onEvent: ((Event) -> Void)?
@@ -56,6 +61,8 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var candidateID: UUID?
     private var candidateTimer: Timer?
     private var rescanTimer: Timer?
+    private var silenceTimer: Timer?
+    private var lastRestartAt = Date.distantPast
     private var wantsConnection = false
     private var unlockSent = false
 
@@ -91,6 +98,7 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         peripheral = nil
         clearCandidate()
         rescanTimer?.invalidate()
+        silenceTimer?.invalidate()
     }
 
     /// Forget everything about the previous sensor's peripheral. `previous` (the old sensor's
@@ -207,6 +215,33 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         reject(id, for: Self.retryAfter)
     }
 
+    /// Starts (or restarts) the clock for a connected link that stops delivering.
+    private func watchForSilence() {
+        silenceTimer?.invalidate()
+        silenceTimer = Timer.scheduledTimer(timeInterval: Self.silentLinkTimeout, target: self,
+                                            selector: #selector(linkWentSilent), userInfo: nil, repeats: false)
+    }
+
+    @objc private func linkWentSilent() {
+        // Candidates have their own, shorter clock.
+        guard let peripheral, peripheral.identifier == knownPeripheralID else { return }
+        restartLink(peripheral, reason: "No data for \(Int(Self.silentLinkTimeout / 60)) min")
+    }
+
+    /// Drops a connection that can't deliver (setup failed, or the sensor went quiet while still
+    /// connected). `didDisconnectPeripheral` then connects again and sends a fresh unlock.
+    private func restartLink(_ target: CBPeripheral, reason: String) {
+        guard wantsConnection, target.state == .connected else { return }
+        guard Date().timeIntervalSince(lastRestartAt) >= Self.restartInterval else {
+            onEvent?(.log("\(reason); restarted the link less than a minute ago, waiting"))
+            watchForSilence()
+            return
+        }
+        lastRestartAt = Date()
+        onEvent?(.log("\(reason), reconnecting"))
+        central?.cancelPeripheralConnection(target)
+    }
+
     // MARK: CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
@@ -225,6 +260,7 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             peripheral = restored
             restored.delegate = self
             wantsConnection = true
+            if restored.state == .connected { watchForSilence() }
             onEvent?(.log("Restored Bluetooth state"))
         }
     }
@@ -249,16 +285,20 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func centralManager(_ central: CBCentralManager, didConnect connected: CBPeripheral) {
         onEvent?(.connected(connected.identifier))
+        watchForSilence()
         connected.discoverServices([Self.serviceUUID])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect failed: CBPeripheral, error: Error?) {
         onEvent?(.log("Connection failed: \(error?.localizedDescription ?? "unknown error")"))
+        silenceTimer?.invalidate()
         reconnect(failed)
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral lost: CBPeripheral, error: Error?) {
         onEvent?(.disconnected(lost.identifier))
+        // Out of range is handled by the pending connection, not by the silence clock.
+        silenceTimer?.invalidate()
         reconnect(lost)
     }
 
@@ -272,9 +312,13 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
-            onEvent?(.log("Libre service not found on this device"))
+            let detail = error.map { ": \($0.localizedDescription)" } ?? ""
             if peripheral.identifier != knownPeripheralID {
+                onEvent?(.log("Libre service not found on this device\(detail)"))
                 reject(peripheral.identifier, for: Self.retryAfter)
+            } else {
+                // Our sensor has the service: the discovery failed, so try the connection again.
+                restartLink(peripheral, reason: "Service discovery failed\(detail)")
             }
             return
         }
@@ -287,6 +331,10 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 writeCharacteristic = characteristic
             }
         }
+        guard writeCharacteristic != nil else {
+            restartLink(peripheral, reason: "Characteristics not found\(error.map { ": \($0.localizedDescription)" } ?? "")")
+            return
+        }
         for characteristic in service.characteristics ?? []
         where characteristic.properties.contains(.notify) || characteristic.properties.contains(.indicate) {
             peripheral.setNotifyValue(true, for: characteristic)
@@ -295,6 +343,8 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         if let error {
+            // Only logged: another characteristic may still deliver. If none does, the silence
+            // clock restarts the link.
             onEvent?(.log("Subscribe failed: \(error.localizedDescription)"))
             return
         }
@@ -306,11 +356,12 @@ final class LibreBLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        if let error { onEvent?(.log("Unlock write failed: \(error.localizedDescription)")) }
+        if let error { restartLink(peripheral, reason: "Unlock write failed: \(error.localizedDescription)") }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let data = characteristic.value, !data.isEmpty else { return }
+        watchForSilence()
         let now = Date()
         if now.timeIntervalSince(lastChunkAt) > 5 { buffer = [] }
         lastChunkAt = now
