@@ -147,6 +147,8 @@ Turn on **Sound through Silent mode and Focus** for an alert (Alerts → tap the
 
 The home screen's **Critical alerts** card shows a check for each step. Once Apple grants the app the Critical Alerts entitlement, alerts become true Critical Alerts: they sound at full volume through everything, even when the app isn't running.
 
+The entitlement was requested for `com.ncatechsolutions.glucoseapp` on 2026-10-05 (Apple request ID DTN8AMS3Z3). When Apple approves it, add `com.apple.developer.usernotifications.critical-alerts: true` to the GlucoseApp entitlements in `App/project.yml`; the app already asks for the permission.
+
 ## References
 
 Protocol work is guided by the open-source projects [xDrip4iOS](https://github.com/JohanDegraeve/xdripswift), [DiaBLE](https://github.com/gui-dos/DiaBLE) and [LibreTransmitter](https://github.com/LoopKit/LibreTransmitter). Check their licences before reusing any code.

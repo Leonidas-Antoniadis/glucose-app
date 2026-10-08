@@ -1,0 +1,644 @@
+{
+  "App/GlucoseApp/App/GlucoseApp.swift": {
+    "mtime": 1791230626.1898232,
+    "seen": 1791231084.816242,
+    "ast_hash": "5c9df1e6a2902f1a0e7154b1f4af485b",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1791224460.1370392,
+    "seen": 1791225528.433527,
+    "ast_hash": "",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Assets.xcassets/Contents.json": {
+    "mtime": 1791224460.1350827,
+    "seen": 1791225528.433527,
+    "ast_hash": "",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Model/AppModel.swift": {
+    "mtime": 1791230626.1903672,
+    "seen": 1791231084.816244,
+    "ast_hash": "858643fb816a63bcf20ed0d46bb8286e",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Model/AppSettings.swift": {
+    "mtime": 1791230626.1905901,
+    "seen": 1791231084.816245,
+    "ast_hash": "a0581f97bd4657ef5353f0fee28f9835",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Sensor/LibreBLE.swift": {
+    "mtime": 1791223420.645614,
+    "seen": 1791231084.816246,
+    "ast_hash": "2997b71259597fad3f71e27b166139d5",
+    "semantic_hash": "2997b71259597fad3f71e27b166139d5"
+  },
+  "App/GlucoseApp/Sensor/LibreNFCReader.swift": {
+    "mtime": 1791230626.1936207,
+    "seen": 1791231084.816247,
+    "ast_hash": "6af3cd94ef45174282efc345076bd115",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Sensor/SensorConnection.swift": {
+    "mtime": 1791230626.1937654,
+    "seen": 1791231084.816247,
+    "ast_hash": "e07c0118b56bb4dd9b5d8c7b5f4cef7d",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Services/AppStores.swift": {
+    "mtime": 1791230626.193954,
+    "seen": 1791231084.8162482,
+    "ast_hash": "fc49f89b0e7d1e96aa9b6823bc82e393",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Services/BackupService.swift": {
+    "mtime": 1791223420.6464639,
+    "seen": 1791231084.8162482,
+    "ast_hash": "649910e649f0c27a6a9b14c8ab356c76",
+    "semantic_hash": "649910e649f0c27a6a9b14c8ab356c76"
+  },
+  "App/GlucoseApp/Services/NotificationService.swift": {
+    "mtime": 1791230626.1940932,
+    "seen": 1791231084.8162482,
+    "ast_hash": "e65557b81fa5635dfd0928a725643521",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Services/ReportExporter.swift": {
+    "mtime": 1791223420.6469958,
+    "seen": 1791231084.8162491,
+    "ast_hash": "b38ba3c4fe3f83157be831831ad98d9d",
+    "semantic_hash": "b38ba3c4fe3f83157be831831ad98d9d"
+  },
+  "App/GlucoseApp/Services/SoundCatalog.swift": {
+    "mtime": 1791230626.1945848,
+    "seen": 1791231084.8162491,
+    "ast_hash": "40093ba1c54db0b2e771ccabc62583b2",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Services/SurfaceUpdater.swift": {
+    "mtime": 1791230626.1953163,
+    "seen": 1791231084.8162491,
+    "ast_hash": "f663176d4eb9b5039cf79f82fd180229",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Services/SystemServices.swift": {
+    "mtime": 1791223420.6478722,
+    "seen": 1791231084.8162491,
+    "ast_hash": "061b988958d26b2de84638cec7bbf810",
+    "semantic_hash": "061b988958d26b2de84638cec7bbf810"
+  },
+  "App/GlucoseApp/Views/AlertsView.swift": {
+    "mtime": 1791230626.1960783,
+    "seen": 1791231084.81625,
+    "ast_hash": "411456b4b1c71c53ef6b40ea5c4a5cdc",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/Components.swift": {
+    "mtime": 1791230626.1969898,
+    "seen": 1791231084.81625,
+    "ast_hash": "0a01df62d360003759e233e3e34ecf9d",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/HomeView.swift": {
+    "mtime": 1791230626.1972182,
+    "seen": 1791231084.8162508,
+    "ast_hash": "5d4fe9f964147566125811d471a99076",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/LogbookView.swift": {
+    "mtime": 1791230626.1973329,
+    "seen": 1791231084.8162508,
+    "ast_hash": "4b92c40e90127031f2cc26e8403a25a0",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/OnboardingView.swift": {
+    "mtime": 1791230626.1977189,
+    "seen": 1791231084.8162508,
+    "ast_hash": "ada4437e43974c88f87d71936cdde3b4",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/ReportsView.swift": {
+    "mtime": 1791223420.6490934,
+    "seen": 1791231084.816253,
+    "ast_hash": "9f349621c8d801e4f4f5b42f2381f366",
+    "semantic_hash": "9f349621c8d801e4f4f5b42f2381f366"
+  },
+  "App/GlucoseApp/Views/SensorView.swift": {
+    "mtime": 1791230626.1980703,
+    "seen": 1791231084.816254,
+    "ast_hash": "57d70ce22cce11ef1250143b621fa6fd",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/SettingsView.swift": {
+    "mtime": 1791230626.1990037,
+    "seen": 1791231084.816254,
+    "ast_hash": "9c805a928b71a2edaed2a257db932afa",
+    "semantic_hash": ""
+  },
+  "App/GlucoseWidget/GlucoseWidget.swift": {
+    "mtime": 1791223420.6495538,
+    "seen": 1791231084.816255,
+    "ast_hash": "d37e9b7fc59f000cddaaecc17d025ab9",
+    "semantic_hash": "d37e9b7fc59f000cddaaecc17d025ab9"
+  },
+  "App/Shared/GlucoseShared.swift": {
+    "mtime": 1791223420.6496801,
+    "seen": 1791231084.816255,
+    "ast_hash": "63fb6ae38ff7617138d1fadbb0ee068d",
+    "semantic_hash": "63fb6ae38ff7617138d1fadbb0ee068d"
+  },
+  "Packages/GlucoseCore/Package.swift": {
+    "mtime": 1791223420.649945,
+    "seen": 1791231084.816255,
+    "ast_hash": "246dbc3f28e046d8a957af7e0c99894e",
+    "semantic_hash": "246dbc3f28e046d8a957af7e0c99894e"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Alerts/AlertEngine.swift": {
+    "mtime": 1791223420.6502275,
+    "seen": 1791231084.816256,
+    "ast_hash": "8e35a43f16dd544cb595b6c93090954b",
+    "semantic_hash": "8e35a43f16dd544cb595b6c93090954b"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Alerts/AlertRule.swift": {
+    "mtime": 1791223420.6503432,
+    "seen": 1791231084.816256,
+    "ast_hash": "5e97ab742cf909072ec8dd4643f3482e",
+    "semantic_hash": "5e97ab742cf909072ec8dd4643f3482e"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Alerts/AlertRuleSet.swift": {
+    "mtime": 1791230626.1996017,
+    "seen": 1791231084.816256,
+    "ast_hash": "012c2f970b0dca2c969dab8bbc39993c",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Alerts/MissingDataAlert.swift": {
+    "mtime": 1791223420.6505468,
+    "seen": 1791231084.816257,
+    "ast_hash": "f6b300dd28b1999b49aa20420bbc2a00",
+    "semantic_hash": "f6b300dd28b1999b49aa20420bbc2a00"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Alerts/TrendAlert.swift": {
+    "mtime": 1791223420.6506326,
+    "seen": 1791231084.816257,
+    "ast_hash": "578aa16c963e7182ae0da766267ef6bc",
+    "semantic_hash": "578aa16c963e7182ae0da766267ef6bc"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Analytics/AmbulatoryGlucoseProfile.swift": {
+    "mtime": 1791223420.6510038,
+    "seen": 1791231084.816257,
+    "ast_hash": "c99d9103cba7aa4a14fe89963da0e855",
+    "semantic_hash": "c99d9103cba7aa4a14fe89963da0e855"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Analytics/DailyPatterns.swift": {
+    "mtime": 1791223420.6511397,
+    "seen": 1791231084.816258,
+    "ast_hash": "17131cce619a4eaba15ce31928d50e47",
+    "semantic_hash": "17131cce619a4eaba15ce31928d50e47"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Analytics/GlucoseStatistics.swift": {
+    "mtime": 1791223420.6513624,
+    "seen": 1791231084.816258,
+    "ast_hash": "01937c8d88d7139554d8ee06091d6fbb",
+    "semantic_hash": "01937c8d88d7139554d8ee06091d6fbb"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Calibration.swift": {
+    "mtime": 1791223420.6514995,
+    "seen": 1791231084.816258,
+    "ast_hash": "063d252b1b15129312324a2ef84c7ffa",
+    "semantic_hash": "063d252b1b15129312324a2ef84c7ffa"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/GlucoseReading.swift": {
+    "mtime": 1791226965.4784,
+    "seen": 1791231084.816258,
+    "ast_hash": "1d3eff83527401299dff22e23f530399",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/GlucoseUnit.swift": {
+    "mtime": 1791223420.6516757,
+    "seen": 1791231084.8162591,
+    "ast_hash": "30c6e3867628a13fe8453e347d8a55c6",
+    "semantic_hash": "30c6e3867628a13fe8453e347d8a55c6"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Logbook.swift": {
+    "mtime": 1791230626.1998389,
+    "seen": 1791231084.8162591,
+    "ast_hash": "87d560ee3a3f5486bf3ef20d1a49acae",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/SensorHistory.swift": {
+    "mtime": 1791223420.6519063,
+    "seen": 1791231084.8162591,
+    "ast_hash": "43bf0b849ac69d16168d8049c9e6e8fd",
+    "semantic_hash": "43bf0b849ac69d16168d8049c9e6e8fd"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Simulation/SimulatedSensor.swift": {
+    "mtime": 1791223420.6520798,
+    "seen": 1791231084.81626,
+    "ast_hash": "4ee66e066eb8bbcc3e3c0c3a818f08e8",
+    "semantic_hash": "4ee66e066eb8bbcc3e3c0c3a818f08e8"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Storage/ReadingArchive.swift": {
+    "mtime": 1791223420.6522622,
+    "seen": 1791231084.81626,
+    "ast_hash": "89b00b7532b09eae7cff76df8034509a",
+    "semantic_hash": "89b00b7532b09eae7cff76df8034509a"
+  },
+  "Packages/GlucoseCore/Sources/GlucoseCore/Trend.swift": {
+    "mtime": 1791223420.6523557,
+    "seen": 1791231084.816261,
+    "ast_hash": "3a09cb887e1bad415e25f878b19976c1",
+    "semantic_hash": "3a09cb887e1bad415e25f878b19976c1"
+  },
+  "Packages/GlucoseCore/Sources/LibreProtocol/Libre2Crypto.swift": {
+    "mtime": 1791230626.200131,
+    "seen": 1791231084.816261,
+    "ast_hash": "4aa83aa752b316de21e00d7a9ee7dac8",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Sources/LibreProtocol/LibreCRC.swift": {
+    "mtime": 1791223420.6526337,
+    "seen": 1791231084.816261,
+    "ast_hash": "b0187f2661361371a6c53fa2c14b279d",
+    "semantic_hash": "b0187f2661361371a6c53fa2c14b279d"
+  },
+  "Packages/GlucoseCore/Sources/LibreProtocol/LibreData.swift": {
+    "mtime": 1791230626.2003865,
+    "seen": 1791231084.816262,
+    "ast_hash": "88bdf9d80f2c90a5135ff79eae17a88d",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Sources/LibreProtocol/LibreSensorRecord.swift": {
+    "mtime": 1791226965.4786642,
+    "seen": 1791231084.816262,
+    "ast_hash": "3ce37c0a3867a2491b152522fb63572e",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Sources/LibreProtocol/LibreSensorType.swift": {
+    "mtime": 1791223420.6528933,
+    "seen": 1791231084.816262,
+    "ast_hash": "ff37a8b38a828c7a435583fc2c76aadf",
+    "semantic_hash": "ff37a8b38a828c7a435583fc2c76aadf"
+  },
+  "Packages/GlucoseCore/Sources/LibreProtocol/LibreSimulator.swift": {
+    "mtime": 1791226965.4790032,
+    "seen": 1791231084.816262,
+    "ast_hash": "3ea7a16a4ecf3f9b91613092cfb1a421",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/AlertEngineTests.swift": {
+    "mtime": 1791223420.6532176,
+    "seen": 1791231084.816263,
+    "ast_hash": "02ed2cd42a6542ae95df04419e95f695",
+    "semantic_hash": "02ed2cd42a6542ae95df04419e95f695"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/AnalyticsTests.swift": {
+    "mtime": 1791223420.6533048,
+    "seen": 1791231084.816263,
+    "ast_hash": "588a8e9b943b3b32651e50d95730c79f",
+    "semantic_hash": "588a8e9b943b3b32651e50d95730c79f"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/CalibrationTests.swift": {
+    "mtime": 1791223420.6535516,
+    "seen": 1791231084.816263,
+    "ast_hash": "829126f733dcc966db427684b17bff30",
+    "semantic_hash": "829126f733dcc966db427684b17bff30"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/RuleSetAndScheduleTests.swift": {
+    "mtime": 1791230626.2008033,
+    "seen": 1791231084.816264,
+    "ast_hash": "1535fd9d676766e27abbb0368a4e8f48",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/SensorHistoryTests.swift": {
+    "mtime": 1791223420.6540241,
+    "seen": 1791231084.816264,
+    "ast_hash": "299e895ebe7ca6002a0bdfe3d01baacc",
+    "semantic_hash": "299e895ebe7ca6002a0bdfe3d01baacc"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/StorageAndExportTests.swift": {
+    "mtime": 1791223420.6542065,
+    "seen": 1791231084.8162649,
+    "ast_hash": "4baaf254e0afbb5ac1e1da23c961cf16",
+    "semantic_hash": "4baaf254e0afbb5ac1e1da23c961cf16"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/TestSupport.swift": {
+    "mtime": 1791223420.6542923,
+    "seen": 1791231084.8162649,
+    "ast_hash": "7bd323e339573ef11ae1dd4b3e5ef3ff",
+    "semantic_hash": "7bd323e339573ef11ae1dd4b3e5ef3ff"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/TrendAlertTests.swift": {
+    "mtime": 1791223420.6544137,
+    "seen": 1791231084.8162649,
+    "ast_hash": "312fb6b7df7f28b0c63938b7a4d2405a",
+    "semantic_hash": "312fb6b7df7f28b0c63938b7a4d2405a"
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/UnitAndReadingTests.swift": {
+    "mtime": 1791223420.6544974,
+    "seen": 1791231084.816266,
+    "ast_hash": "e49dcb2e445c9158895a9d936a17aadf",
+    "semantic_hash": "e49dcb2e445c9158895a9d936a17aadf"
+  },
+  "Packages/GlucoseCore/Tests/LibreProtocolTests/LibreFixtures.swift": {
+    "mtime": 1791223420.654754,
+    "seen": 1791231084.816266,
+    "ast_hash": "0126e351d614ce8c6fe71c39e2ae5cee",
+    "semantic_hash": "0126e351d614ce8c6fe71c39e2ae5cee"
+  },
+  "Packages/GlucoseCore/Tests/LibreProtocolTests/LibreProtocolTests.swift": {
+    "mtime": 1791230626.2010658,
+    "seen": 1791231084.816266,
+    "ast_hash": "30977cd6faa27f7549bf6f120b680008",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Tests/LibreProtocolTests/LibreSimulatorTests.swift": {
+    "mtime": 1791223420.6549711,
+    "seen": 1791231084.816267,
+    "ast_hash": "9b41c65ce98c46b555eb78a6a23b2a4e",
+    "semantic_hash": "9b41c65ce98c46b555eb78a6a23b2a4e"
+  },
+  "tools/generate-sounds.ps1": {
+    "mtime": 1791230626.2022476,
+    "seen": 1791231084.816267,
+    "ast_hash": "412e2fe31414bfc16cf3f74226304c93",
+    "semantic_hash": ""
+  },
+  ".claude/skills/install-on-iphone/SKILL.md": {
+    "mtime": 1791223420.6329665,
+    "seen": 1791231084.816268,
+    "ast_hash": "b9ef803a3b4e862b0f3b01c6ef8ca71d",
+    "semantic_hash": "b9ef803a3b4e862b0f3b01c6ef8ca71d"
+  },
+  ".claude/skills/ship-and-check/SKILL.md": {
+    "mtime": 1791223420.6331081,
+    "seen": 1791231084.816268,
+    "ast_hash": "f53297c5426669273cc4a830e46df7e7",
+    "semantic_hash": "f53297c5426669273cc4a830e46df7e7"
+  },
+  ".github/workflows/core-tests.yml": {
+    "mtime": 1791223420.6333895,
+    "seen": 1791231084.816268,
+    "ast_hash": "c275f1f0cccb4d3d14e144c7babf95ed",
+    "semantic_hash": "c275f1f0cccb4d3d14e144c7babf95ed"
+  },
+  ".github/workflows/ios-build.yml": {
+    "mtime": 1791230626.1896744,
+    "seen": 1791231084.8162692,
+    "ast_hash": "eb2023979060f37b97c2aa2302bd9d24",
+    "semantic_hash": ""
+  },
+  "App/project.yml": {
+    "mtime": 1791230626.1992238,
+    "seen": 1791231084.8162692,
+    "ast_hash": "703726ab59d9628f01890c3bbe89fe02",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1791230626.2013001,
+    "seen": 1791231084.81627,
+    "ast_hash": "44a1940ce81493f74efb5f07f7852950",
+    "semantic_hash": ""
+  },
+  "TESTFLIGHT.md": {
+    "mtime": 1791227038.1615813,
+    "seen": 1791231084.81627,
+    "ast_hash": "0d9ef99455e6c9260bffef65cdb20e85",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png": {
+    "mtime": 1791224453.6265094,
+    "seen": 1791231084.81627,
+    "ast_hash": "b64521dd21b392d18aaebec66740fbb6",
+    "semantic_hash": "b64521dd21b392d18aaebec66740fbb6"
+  },
+  "App/GlucoseApp/Resources/Sounds/tune_alarm_high.wav": {
+    "mtime": 1791230626.1918073,
+    "seen": 1791231084.816275,
+    "ast_hash": "347e21084780c6a3925604350f481db2",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Resources/Sounds/tune_alarm_low.wav": {
+    "mtime": 1791230626.193481,
+    "seen": 1791231084.816276,
+    "ast_hash": "d6bef171071cf574a618e3f37703df50",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Resources/Sounds/tune_chime.wav": {
+    "mtime": 1791223420.637199,
+    "seen": 1791231084.816276,
+    "ast_hash": "19c0271dafcf88242e9e1c2a0248e6c6",
+    "semantic_hash": "19c0271dafcf88242e9e1c2a0248e6c6"
+  },
+  "App/GlucoseApp/Resources/Sounds/tune_pulse.wav": {
+    "mtime": 1791223420.6378841,
+    "seen": 1791231084.816277,
+    "ast_hash": "8047ed131fbc5946dcdaf57145026a29",
+    "semantic_hash": "8047ed131fbc5946dcdaf57145026a29"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_falling_fast.wav": {
+    "mtime": 1791223420.6392827,
+    "seen": 1791231084.816277,
+    "ast_hash": "fdc2362318297a2383cb5397b8ce5936",
+    "semantic_hash": "fdc2362318297a2383cb5397b8ce5936"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_glucose_high.wav": {
+    "mtime": 1791223420.640187,
+    "seen": 1791231084.816278,
+    "ast_hash": "79c7c877b0d29eb7a3c98bb670a703e7",
+    "semantic_hash": "79c7c877b0d29eb7a3c98bb670a703e7"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_glucose_low.wav": {
+    "mtime": 1791223420.640534,
+    "seen": 1791231084.816278,
+    "ast_hash": "e46bb58722bbfbc76fb38b1f36a32113",
+    "semantic_hash": "e46bb58722bbfbc76fb38b1f36a32113"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_glucose_very_high.wav": {
+    "mtime": 1791223420.6410494,
+    "seen": 1791231084.816278,
+    "ast_hash": "672d4c400139542e85b721220fa708e8",
+    "semantic_hash": "672d4c400139542e85b721220fa708e8"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_glucose_very_low.wav": {
+    "mtime": 1791223420.64134,
+    "seen": 1791231084.816279,
+    "ast_hash": "995c48bc179ac835b2f2fecb40eb5d5b",
+    "semantic_hash": "995c48bc179ac835b2f2fecb40eb5d5b"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_low_soon.wav": {
+    "mtime": 1791223420.642072,
+    "seen": 1791231084.816279,
+    "ast_hash": "d67a07192a1918863e40fdc6640158b2",
+    "semantic_hash": "d67a07192a1918863e40fdc6640158b2"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_no_data.wav": {
+    "mtime": 1791223420.64314,
+    "seen": 1791231084.816279,
+    "ast_hash": "c3e4474f4dc342151e52a8a89d9eef5a",
+    "semantic_hash": "c3e4474f4dc342151e52a8a89d9eef5a"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_rising_fast.wav": {
+    "mtime": 1791223420.6440597,
+    "seen": 1791231084.8162801,
+    "ast_hash": "a6f20419cfd0e91c83ed4887aa58590d",
+    "semantic_hash": "a6f20419cfd0e91c83ed4887aa58590d"
+  },
+  "App/GlucoseApp/Resources/Sounds/voice_urgent_low.wav": {
+    "mtime": 1791223420.6450486,
+    "seen": 1791231084.8162801,
+    "ast_hash": "a4367117df9dab54b061bb76952fc1b0",
+    "semantic_hash": "a4367117df9dab54b061bb76952fc1b0"
+  },
+  "App/GlucoseApp/Model/SavedCapture.swift": {
+    "mtime": 1791226965.4761062,
+    "seen": 1791231084.816246,
+    "ast_hash": "537687bc0fa3de266fb986cbfd740f5f",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/CriticalAlertsViews.swift": {
+    "mtime": 1791230626.1970885,
+    "seen": 1791231084.81625,
+    "ast_hash": "986734a89ebe7c6f2bb12e305d2609f0",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/QuickLogViews.swift": {
+    "mtime": 1791230626.197806,
+    "seen": 1791231084.816252,
+    "ast_hash": "61e649581eb24bf238c591aecd568544",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/RawDataView.swift": {
+    "mtime": 1791226965.4776797,
+    "seen": 1791231084.816252,
+    "ast_hash": "02cf6562394352bed4d056615e5add88",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Views/SensorHistoryView.swift": {
+    "mtime": 1791226965.4777577,
+    "seen": 1791231084.816254,
+    "ast_hash": "942725aec7b6b39f2da0af858ccd5822",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Tests/GlucoseCoreTests/QuickLogTests.swift": {
+    "mtime": 1791230626.2004604,
+    "seen": 1791231084.816264,
+    "ast_hash": "8cc9cb2710e9f820960c22db0518b9e2",
+    "semantic_hash": ""
+  },
+  "Packages/GlucoseCore/Tests/LibreProtocolTests/SensorScenarioTests.swift": {
+    "mtime": 1791226965.479094,
+    "seen": 1791231084.816267,
+    "ast_hash": "3e53aef9a4d1c860c71fd68646a89f04",
+    "semantic_hash": ""
+  },
+  "tools/testflight-upload.sh": {
+    "mtime": 1791227025.9837089,
+    "seen": 1791231084.816267,
+    "ast_hash": "b9ac3953d55fe04fec012548d83ff8e6",
+    "semantic_hash": ""
+  },
+  ".github/workflows/testflight.yml": {
+    "mtime": 1791227016.3779185,
+    "seen": 1791231084.8162692,
+    "ast_hash": "92888273d7f13c8ab8bd95ecdafa0da7",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/add-entry.png": {
+    "mtime": 1791226965.4805305,
+    "seen": 1791231084.816271,
+    "ast_hash": "7d5f373dc75b71522a0526cfcc6df10f",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/alert-editor.png": {
+    "mtime": 1791226965.4810727,
+    "seen": 1791231084.816271,
+    "ast_hash": "a3b214857d1f5b7e202383a4002ce0f4",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/alerts.png": {
+    "mtime": 1791226965.4823167,
+    "seen": 1791231084.816271,
+    "ast_hash": "199d15cce1e6f7a5ff1ae942e8685431",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/battery-lock-screen.png": {
+    "mtime": 1791230626.2019677,
+    "seen": 1791231084.8162718,
+    "ast_hash": "c7b8b79fd62e75988f1758e30d52ff61",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/home-chart.png": {
+    "mtime": 1791226965.4840746,
+    "seen": 1791231084.8162718,
+    "ast_hash": "9f247614fbcfad9d70388d0c6a060244",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/home-dark.png": {
+    "mtime": 1791226965.4854991,
+    "seen": 1791231084.8162718,
+    "ast_hash": "9f8a98fcb652a319edf006f82a2f7096",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/home.png": {
+    "mtime": 1791226965.487226,
+    "seen": 1791231084.816273,
+    "ast_hash": "5aa8dccc0c392342080b1d6b584c6716",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/logbook.png": {
+    "mtime": 1791226965.4882882,
+    "seen": 1791231084.816273,
+    "ast_hash": "cd1d8e7a6e8b90f00f6dcd11c93b2502",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/onboarding.png": {
+    "mtime": 1791226965.4891334,
+    "seen": 1791231084.816273,
+    "ast_hash": "b98789133709ab6fca870d52a3ad778a",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/packet.png": {
+    "mtime": 1791226965.4899998,
+    "seen": 1791231084.816273,
+    "ast_hash": "9a33dd5add0ac4280ebbab14dfbfe7e8",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/raw-data.png": {
+    "mtime": 1791226965.4912834,
+    "seen": 1791231084.816274,
+    "ast_hash": "24d1dc587c23a9cb4d18250c5c39dc37",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/reports.png": {
+    "mtime": 1791226965.492557,
+    "seen": 1791231084.816274,
+    "ast_hash": "0d6c276704193cec26fc93842d691d76",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/sensor-history.png": {
+    "mtime": 1791226965.4936886,
+    "seen": 1791231084.816274,
+    "ast_hash": "91dcc3dca768c96fae8fed85ab1e3a4b",
+    "semantic_hash": ""
+  },
+  "docs/screenshots/sensor.png": {
+    "mtime": 1791226965.4946148,
+    "seen": 1791231084.816275,
+    "ast_hash": "0eb0a14e0409874867fdf0bddc712cc9",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Resources/Sounds/tune_alarm_loud_high.wav": {
+    "mtime": 1791230626.192283,
+    "seen": 1791231084.816275,
+    "ast_hash": "9c060f94fbfe3c21d588fc0713147cd9",
+    "semantic_hash": ""
+  },
+  "App/GlucoseApp/Resources/Sounds/tune_alarm_loud_low.wav": {
+    "mtime": 1791230626.192715,
+    "seen": 1791231084.816276,
+    "ast_hash": "0db5f2826d79117713e8152692ef6e01",
+    "semantic_hash": ""
+  }
+}
