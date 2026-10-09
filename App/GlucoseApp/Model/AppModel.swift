@@ -187,7 +187,10 @@ final class AppModel {
     func readings(lastHours hours: Double) -> [GlucoseReading] {
         guard let end = latest?.timestamp else { return [] }
         let start = end.addingTimeInterval(-hours * 3600)
-        return readings.filter { $0.timestamp >= start }
+        // Readings are sorted by time: walk back from the newest instead of scanning two weeks.
+        var index = readings.endIndex
+        while index > readings.startIndex, readings[index - 1].timestamp >= start { index -= 1 }
+        return Array(readings[index...])
     }
 
     func readings(in interval: DateInterval) -> [GlucoseReading] {
@@ -404,10 +407,8 @@ final class AppModel {
         let valid = incoming.filter(ReadingPipeline.isPlausible)
         guard !valid.isEmpty else { return }
         let previousLatest = readings.last?.timestamp
-        let known = Set(readings.map(\.id))
-        let fresh = valid.filter { !known.contains($0.id) }
-
-        readings = ReadingPipeline.merge(readings, with: valid)
+        // Merges only the last stretch: re-sorting two weeks of readings every minute costs battery.
+        let fresh = ReadingPipeline.append(valid, to: &readings)
         if let newest = readings.last?.timestamp {
             let cutoff = newest.addingTimeInterval(-Self.memoryDays * 86_400)
             if let first = readings.firstIndex(where: { $0.timestamp >= cutoff }), first > 0 {

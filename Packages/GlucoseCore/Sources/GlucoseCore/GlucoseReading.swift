@@ -91,6 +91,32 @@ public enum ReadingPipeline {
         return byID.values.sorted { $0.timestamp < $1.timestamp }
     }
 
+    /// `merge` for a series already sorted by time (as `merge` returns it), done in place and
+    /// without re-sorting all of it: each packet adds a minute or two to two weeks of readings,
+    /// so only the stretch from `margin` before the earliest new reading is merged. A reading's id
+    /// is its sensor and minute, and the same minute's time moves by at most a couple of minutes
+    /// (a re-pairing; a bigger clock change re-dates every reading first), so no duplicate sits
+    /// further back. Returns the incoming readings that weren't there yet.
+    @discardableResult
+    public static func append(_ incoming: [GlucoseReading], to existing: inout [GlucoseReading],
+                              margin: TimeInterval = 30 * 60) -> [GlucoseReading] {
+        let plausible = incoming.filter(isPlausible)
+        guard let earliest = plausible.map(\.timestamp).min() else { return [] }
+        let start = earliest.addingTimeInterval(-margin)
+        // Binary search for the first reading at or after `start`.
+        var low = existing.startIndex
+        var high = existing.endIndex
+        while low < high {
+            let mid = (low + high) / 2
+            if existing[mid].timestamp < start { low = mid + 1 } else { high = mid }
+        }
+        let tail = Array(existing[low...])
+        let known = Set(tail.map(\.id))
+        let added = plausible.filter { !known.contains($0.id) }
+        existing.replaceSubrange(low..., with: merge(tail, with: plausible))
+        return added
+    }
+
     /// Re-dates one sensor's readings from its minute counter (`activatedAt` + `minuteIndex` minutes),
     /// for when the sensor's start time had to be moved because the phone clock changed or drifted.
     /// Without this, new readings would sort before older ones dated by the old clock.

@@ -59,15 +59,21 @@ extension AppModel {
 
     /// The media volume, 0...1. `outputVolume` can be stale while the app's audio session is
     /// inactive, so with nothing playing a session that mixes with other audio (it doesn't stop
-    /// music) is activated first.
+    /// music) is activated first. Once active it stays current, so it's switched on again only
+    /// after an alarm or a preview changed it, or once a minute, not on every read (Home and the
+    /// bedtime card read it every 5 seconds).
     static func freshMediaVolume() -> Double {
         let session = AVAudioSession.sharedInstance()
-        if !AlarmPlayer.isActive, SoundPreviewPlayer.shared.playing == nil {
+        if !AlarmPlayer.isActive, SoundPreviewPlayer.shared.playing == nil,
+           session.category != .ambient || Date().timeIntervalSince(volumeSessionActivatedAt) > 60 {
             try? session.setCategory(.ambient, options: [.mixWithOthers])
             try? session.setActive(true)
+            volumeSessionActivatedAt = Date()
         }
         return Double(session.outputVolume)
     }
+
+    private static var volumeSessionActivatedAt = Date.distantPast
 
     // MARK: When to show it
 

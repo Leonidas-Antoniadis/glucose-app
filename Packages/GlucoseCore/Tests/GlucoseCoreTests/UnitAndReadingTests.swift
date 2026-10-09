@@ -28,6 +28,30 @@ final class UnitAndReadingTests: XCTestCase {
         XCTAssertEqual(again.first?.mgdL, 102)
     }
 
+    func testAppendGivesTheSameResultAsAFullMerge() {
+        // Two days of readings, then packets: a live minute with 15 minutes of trend repeated, a
+        // backfill of the last 8 hours after a gap, and a live value replacing a backfilled one.
+        let days = (0..<2880).map { TestSupport.reading(Double(100 + $0 % 50), minute: $0) }
+        let packets: [[GlucoseReading]] = [
+            (2865...2880).map { TestSupport.reading(Double(100 + $0 % 50), minute: $0) },
+            (2400...2900).map { TestSupport.reading(120, minute: $0, source: .backfill) },
+            [TestSupport.reading(130, minute: 2890, source: .bluetooth), TestSupport.reading(.nan, minute: 2891)],
+        ]
+        var appended = days
+        var merged = days
+        for packet in packets {
+            let known = Set(merged.map(\.id))
+            let expectedAdded = packet.filter { ReadingPipeline.isPlausible($0) && !known.contains($0.id) }
+            let added = ReadingPipeline.append(packet, to: &appended)
+            merged = ReadingPipeline.merge(merged, with: packet)
+            XCTAssertEqual(appended, merged)
+            XCTAssertEqual(added.map(\.id), expectedAdded.map(\.id))
+        }
+        XCTAssertEqual(appended.last?.minuteIndex, 2900)
+        XCTAssertEqual(appended.first { $0.minuteIndex == 2890 }?.mgdL, 130, "the live value wins")
+        XCTAssertTrue(ReadingPipeline.append([], to: &appended).isEmpty)
+    }
+
     func testMergeDropsImplausibleValues() {
         let merged = ReadingPipeline.merge([], with: [
             TestSupport.reading(0, minute: 0),

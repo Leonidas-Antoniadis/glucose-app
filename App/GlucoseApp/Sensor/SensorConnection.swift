@@ -638,11 +638,14 @@ final class SensorConnection {
             return
         }
 
+        // The record is saved only when it changes, not with every packet.
+        var changed = false
         if record.peripheralIdentifier != id {
             record.peripheralIdentifier = id
             unconfirmedFailures = [:]
             ble.confirm(id)
             log("Sensor confirmed")
+            changed = true
         }
         // Keep the timeline anchored to the sensor's own clock. If the phone clock changed or
         // drifted, the readings so far are re-dated too, or new ones would sort before them.
@@ -655,9 +658,12 @@ final class SensorConnection {
             onEvent?(.timelineShifted(serial: record.serial, activatedAt: record.activatedAt, interval: interval))
             self.record = record
             scheduleExpiryCheck()
+            changed = true
         }
-        self.record = record
-        save()
+        if changed {
+            self.record = record
+            save()
+        }
         lastPacketAt = Date()
         if let latest = parsed.latest {
             lastRaw = RawSample(date: record.timestamp(forMinute: latest.minuteIndex), raw: Double(latest.raw))
