@@ -96,7 +96,8 @@ public struct Calibration: Codable, Hashable, Sendable {
             // contradict each other (a contaminated finger, a stick during a fast change) would be
             // clamped to the flattest slope and squeeze every value toward the mean, showing lows as
             // in range. Then the default slope stays and only the offset is fitted.
-            if variance > 0, covariance > 0 {
+            // Raw values that barely differ (rounding noise when they're equal) give no slope.
+            if variance / totalWeight > 1, covariance > 0 {
                 slope = min(max(covariance / variance, slopeRange.lowerBound), slopeRange.upperBound)
             }
         }
