@@ -6,10 +6,32 @@ import GlucoseCore
 /// words, a consensus error grid, and where the sensor is weaker.
 struct AccuracyView: View {
     @Environment(AppModel.self) private var model
-    @State private var report: AccuracyReport?
+    @State private var fullReport: AccuracyReport?
+    @State private var allSensors = false
+
+    /// The paired sensor's serial; nil (all sensors) in the demo or with none paired.
+    private var currentSerial: String? { model.isDemo ? nil : model.sensor.record?.serial }
+
+    /// The checks shown: the current sensor's, or every sensor's.
+    private var report: AccuracyReport? {
+        fullReport.map { allSensors ? $0 : $0.forSensor(currentSerial) }
+    }
 
     var body: some View {
         List {
+            if currentSerial != nil {
+                Section {
+                    Picker("Checks", selection: $allSensors) {
+                        Text("This sensor").tag(false)
+                        Text("All sensors").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                } footer: {
+                    Text(allSensors
+                         ? "Every fingerstick from the last 91 days, across sensors."
+                         : "Only fingersticks since this sensor was paired: each sensor has its own accuracy and calibration.")
+                }
+            }
             if let report {
                 if let mard = report.mard {
                     summary(report, mard: mard)
@@ -53,7 +75,7 @@ struct AccuracyView: View {
             }
         }
         .task(id: model.fingersticks.count) {
-            report = await model.fullAccuracyReport()
+            fullReport = await model.fullAccuracyReport()
         }
     }
 

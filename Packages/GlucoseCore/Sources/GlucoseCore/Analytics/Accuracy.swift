@@ -89,6 +89,12 @@ public struct AccuracyReport: Hashable, Sendable {
         self.unpairedCount = unpairedCount
     }
 
+    /// Only the checks of one sensor: each sensor has its own accuracy and calibration. Nil keeps all.
+    public func forSensor(_ serial: String?) -> AccuracyReport {
+        guard let serial else { return self }
+        return AccuracyReport(pairs: pairs.filter { $0.sensorSerial == serial })
+    }
+
     /// Matches each fingerstick with the newest reading of its sensor at or before it, within
     /// `maxGapMinutes`: never a later one, which would know where glucose went. The app's value
     /// is the one saved with the check when there is one (later calibrations rewrite readings).

@@ -97,18 +97,28 @@ struct SensorView: View {
             }
 
             Section("Accuracy") {
-                let report = model.accuracy
+                let all = model.accuracy
+                // Each sensor has its own accuracy; the demo has no real sensor to split by.
+                let report = all.forSensor(model.isDemo ? nil : sensor.record?.serial)
                 if let mard = report.mard, let within = report.within15_15 {
-                    MetricRow(label: "MARD (last 14 days)", value: String(format: "%.1f %%", mard), warning: mard > 15)
+                    MetricRow(label: model.isDemo ? "MARD (last 14 days)" : "MARD, this sensor",
+                              value: String(format: "%.1f %%", mard), warning: mard > 15)
                     MetricRow(label: "Within \(model.unit.format(mgdL: 15, includeSymbol: true)) or 15%",
                               value: String(format: "%.0f %%", within * 100))
                     MetricRow(label: "Comparisons", value: "\(report.pairs.count)")
+                } else if !model.isDemo, sensor.record != nil, all.mard != nil {
+                    Text("No checks for this sensor yet. Add a fingerstick to measure it.")
+                        .foregroundStyle(.secondary)
                 } else if model.isDemo {
                     Text("Accuracy is measured against your own sensor, so it isn't shown for the demo.")
                         .foregroundStyle(.secondary)
                 } else {
                     Text("Add fingersticks to measure accuracy.")
                         .foregroundStyle(.secondary)
+                }
+                if !model.isDemo, let mard = all.mard, all.pairs.count != report.pairs.count {
+                    MetricRow(label: "MARD, all sensors (14 days)",
+                              value: String(format: "%.1f %% · %d checks", mard, all.pairs.count))
                 }
                 NavigationLink {
                     AccuracyView()

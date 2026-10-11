@@ -111,6 +111,17 @@ final class AccuracyTests: XCTestCase {
         XCTAssertEqual(report.pairs.first?.referenceMgdL, 104)
     }
 
+    func testReportForOneSensor() {
+        let report = AccuracyReport(pairs: [
+            AccuracyReport.Pair(date: TestSupport.noon, referenceMgdL: 100, sensorMgdL: 130, sensorSerial: "OLD"),
+            AccuracyReport.Pair(date: TestSupport.noon.addingTimeInterval(60), referenceMgdL: 100, sensorMgdL: 105, sensorSerial: "NEW"),
+        ])
+        XCTAssertEqual(report.forSensor("NEW").pairs.count, 1)
+        XCTAssertEqual(report.forSensor("NEW").mard ?? 0, 5, accuracy: 0.001)
+        XCTAssertEqual(report.forSensor(nil).pairs.count, 2)
+        XCTAssertTrue(report.forSensor("OTHER").pairs.isEmpty)
+    }
+
     func testCalibrationsCountAgainstTheValueShownBeforeThem() {
         let readings = (0..<20).map { TestSupport.reading(100, minute: $0) }
         // Calibrated because the sensor was far off: scored against the 130 shown before it, not
