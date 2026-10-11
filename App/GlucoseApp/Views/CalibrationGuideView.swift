@@ -24,17 +24,19 @@ struct CalibrationGuideView: View {
                 Text("Abbott's conversion isn't public, so the app draws a line from the sensor's raw signal to your fingersticks.")
                 GuideRow(mark: "4 days", text: "It uses the calibrations from the last 4 days. Newer ones count more.")
                 GuideRow(mark: "Two levels", text: "For the slope it needs two calibrations at least \(u.format(mgdL: 40, includeSymbol: true)) apart, say one near \(u.format(mgdL: 90)) and one near \(u.format(mgdL: 170)). Otherwise it only shifts every value up or down.")
-                GuideRow(mark: "Kept", text: "The latest calibration stays until you calibrate again; it doesn't wear off.")
+                GuideRow(mark: "Day 1", text: "Calibrations from the sensor's first 24 hours count a fifth as much as later ones, so one made while the signal was settling fades out once you calibrate again.")
+                GuideRow(mark: "Kept", text: "The latest calibration stays until you calibrate again; it doesn't wear off. To undo one, delete or edit its fingerstick in the Logbook.")
                 GuideRow(mark: "Far off", text: "A fingerstick more than \(u.format(mgdL: 40, includeSymbol: true)) and 40 % away from the sensor waits for a second one within 30 minutes to agree, since that's more often a test error.")
             } header: {
                 Text("How this app calibrates")
             }
 
             Section {
-                GuideRow(mark: "1", text: "New sensor, first 1–2 days: 2–3 calibrations, one at a lower value and one at a higher one.")
-                GuideRow(mark: "2", text: "Then stop calibrating routinely. Take one check a day with \"Use to calibrate\" off: it keeps measuring accuracy without changing anything.")
-                GuideRow(mark: "3", text: "Calibrate again only when a check is red under Accuracy → Times it was off (more than \(u.format(mgdL: 20, includeSymbol: true)) or 20 %) and glucose is steady. Orange (15–20 %) can be meter error: calibrate only if the next check is off the same way.")
-                GuideRow(mark: "4", text: "Check more often on the sensor's first and last days: sensors drift more then.")
+                GuideRow(mark: "1", text: "New sensor: don't calibrate in its first 12–24 hours. Its signal is still settling, and a calibration then makes later values wrong. Take checks with \"Use to calibrate\" off instead.")
+                GuideRow(mark: "2", text: "From day 2: calibrate twice when glucose is steady, once at a lower value and once at a higher one, at least \(u.format(mgdL: 40, includeSymbol: true)) apart.")
+                GuideRow(mark: "3", text: "Then stop calibrating routinely. Take one check a day with \"Use to calibrate\" off: it keeps measuring accuracy without changing anything.")
+                GuideRow(mark: "4", text: "Calibrate again only when a check is red under Accuracy → Times it was off (more than \(u.format(mgdL: 20, includeSymbol: true)) or 20 %) and glucose is steady. Orange (15–20 %) can be meter error: calibrate only if the next check is off the same way.")
+                GuideRow(mark: "5", text: "Check more often on the sensor's first and last days: sensors drift more then.")
                 Text("Too many calibrations hurt: one taken while glucose is moving, or with sugar on the finger, pulls the line off. A few good ones beat many.")
                     .foregroundStyle(.secondary)
             } header: {

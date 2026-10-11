@@ -68,6 +68,8 @@ struct LogbookView: View {
     @State private var adding: QuickLogKind?
     /// A calibration fingerstick waiting for confirmation before it's deleted.
     @State private var pendingCalibrationDelete: FingerstickEntry?
+    /// The row whose edit form is open.
+    @State private var editing: Row?
 
     /// Notes and fingersticks in one timeline, newest first.
     private enum Row: Identifiable {
@@ -102,22 +104,37 @@ struct LogbookView: View {
                 }
                 if rows.isEmpty {
                     ContentUnavailableView("Nothing logged yet", systemImage: "book",
-                                           description: Text("Log insulin, food, exercise and blood glucose. Entries appear as markers on the chart."))
+                                           description: Text("Log insulin, food, exercise and blood glucose. Entries appear as markers on the chart. Tap one to edit it."))
                 }
                 ForEach(days.keys.sorted(by: >), id: \.self) { day in
                     Section(day.formatted(date: .complete, time: .omitted)) {
                         ForEach(days[day] ?? []) { row in
-                            rowView(row)
-                                .swipeActions {
-                                    Button("Delete", role: .destructive) { delete(row) }
-                                }
+                            Button {
+                                editing = row
+                            } label: {
+                                rowView(row).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .swipeActions {
+                                Button("Delete", role: .destructive) { delete(row) }
+                                Button("Edit") { editing = row }.tint(.blue)
+                            }
                         }
                     }
                 }
             }
             .navigationTitle("Logbook")
             .sheet(item: $adding) { kind in AddLogEntryView(kind: kind) }
-            .onChange(of: model.lockCount) { adding = nil }
+            .sheet(item: $editing) { row in
+                switch row {
+                case .entry(let entry): AddLogEntryView(editing: entry, unit: model.unit)
+                case .stick(let stick): AddLogEntryView(editing: stick, unit: model.unit)
+                }
+            }
+            .onChange(of: model.lockCount) {
+                adding = nil
+                editing = nil
+            }
             .confirmationDialog("Delete this calibration?", isPresented: Binding(
                 get: { pendingCalibrationDelete != nil }, set: { if !$0 { pendingCalibrationDelete = nil } }
             ), titleVisibility: .visible) {
@@ -190,17 +207,66 @@ struct AddLogEntryView: View {
     @State private var text = ""
     @State private var calibrate = false
     @State private var result: String?
+    @Environment(SensorConnection.self) private var sensor
+    /// The entry or fingerstick being edited; nil when adding.
+    private let editingEntry: LogEntry?
+    private let editingStick: FingerstickEntry?
+    /// An edited fingerstick was saved (it's replaced, so it can't be saved twice).
+    @State private var editSaved = false
 
     init(kind: QuickLogKind = .food) {
         _kind = State(initialValue: kind)
+        editingEntry = nil
+        editingStick = nil
+    }
+
+    init(editing entry: LogEntry, unit: GlucoseUnit) {
+        editingEntry = entry
+        editingStick = nil
+        _date = State(initialValue: entry.date)
+        _text = State(initialValue: entry.text)
+        switch entry.kind {
+        case .insulin(let units, let type):
+            _kind = State(initialValue: type == .long ? .slowInsulin : .fastInsulin)
+            _amountText = State(initialValue: LogEntry.format(units))
+        case .meal(let carbs):
+            _kind = State(initialValue: .food)
+            _amountText = State(initialValue: carbs.map(LogEntry.format) ?? "")
+        case .exercise(let minutes):
+            _kind = State(initialValue: .exercise)
+            _minutes = State(initialValue: minutes)
+        case .note:
+            _kind = State(initialValue: .note)
+        }
+    }
+
+    init(editing stick: FingerstickEntry, unit: GlucoseUnit) {
+        editingEntry = nil
+        editingStick = stick
+        _kind = State(initialValue: .bloodGlucose)
+        _date = State(initialValue: stick.date)
+        _amountText = State(initialValue: unit.format(mgdL: stick.mgdL))
+        _libreLinkText = State(initialValue: stick.libreLinkMgdL.map { unit.format(mgdL: $0) } ?? "")
+        _calibrate = State(initialValue: stick.usedForCalibration)
+    }
+
+    private var isEditing: Bool { editingEntry != nil || editingStick != nil }
+
+    /// Hours since the paired sensor started, at the fingerstick's time, during its first 12 hours.
+    private var earlySensorHours: Int? {
+        guard let record = sensor.record else { return nil }
+        let minutes = record.ageMinutes(at: date)
+        return (0..<12 * 60).contains(minutes) ? minutes / 60 : nil
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    Picker("Type", selection: $kind) {
-                        ForEach(QuickLogKind.allCases) { Label($0.title, systemImage: $0.symbolName).tag($0) }
+                    if !isEditing {
+                        Picker("Type", selection: $kind) {
+                            ForEach(QuickLogKind.allCases) { Label($0.title, systemImage: $0.symbolName).tag($0) }
+                        }
                     }
                     switch kind {
                     case .fastInsulin, .slowInsulin:
@@ -218,6 +284,11 @@ struct AddLogEntryView: View {
                             TextField("0", text: $amountText).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                         }
                         Toggle("Use to calibrate the sensor", isOn: $calibrate)
+                        if calibrate, let hours = earlySensorHours {
+                            Text("This sensor is only \(hours) h old. Its signal often settles over the first 12–24 hours, so a calibration now can make later values wrong. Better: save this as a check (turn this off) and calibrate from tomorrow.")
+                                .font(.caption)
+                                .foregroundStyle(RangePalette.warningText)
+                        }
                         if !calibrate {
                             LabeledContent("LibreLink showed (\(model.unit.symbol))") {
                                 TextField("optional", text: $libreLinkText)
@@ -254,12 +325,12 @@ struct AddLogEntryView: View {
                     Section { Text(result) }
                 }
             }
-            .navigationTitle("Add \(kind.title.lowercased())")
+            .navigationTitle("\(isEditing ? "Edit" : "Add") \(kind.title.lowercased())")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(result == nil ? "Cancel" : "Done") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }.disabled(!isValid)
+                    Button("Save") { save() }.disabled(!isValid || editSaved)
                 }
             }
         }
@@ -290,23 +361,39 @@ struct AddLogEntryView: View {
         switch kind {
         case .bloodGlucose:
             guard let mgdL = model.unit.parse(amountText) else { return }
-            result = model.addFingerstick(mgdL: mgdL, date: date, calibrate: calibrate,
-                                          libreLinkMgdL: calibrate ? nil : model.unit.parse(libreLinkText))
+            let libreLink = calibrate ? nil : model.unit.parse(libreLinkText)
+            if let editingStick {
+                result = model.editFingerstick(editingStick, mgdL: mgdL, date: date, calibrate: calibrate,
+                                               libreLinkMgdL: libreLink)
+                editSaved = true
+                return
+            }
+            result = model.addFingerstick(mgdL: mgdL, date: date, calibrate: calibrate, libreLinkMgdL: libreLink)
             amountText = ""
             libreLinkText = ""
             return
-        case .fastInsulin:
-            model.addLogEntry(LogEntry(date: date, kind: .insulin(units: amount ?? 0, type: .rapid), text: text))
-        case .slowInsulin:
-            model.addLogEntry(LogEntry(date: date, kind: .insulin(units: amount ?? 0, type: .long), text: text))
+        case .fastInsulin, .slowInsulin:
+            // An edited dose keeps its insulin type (including "other").
+            var type: LogEntry.InsulinType = kind == .slowInsulin ? .long : .rapid
+            if case .insulin(_, let original)? = editingEntry?.kind { type = original }
+            store(.insulin(units: amount ?? 0, type: type))
         case .food:
-            model.addLogEntry(LogEntry(date: date, kind: .meal(carbsGrams: amount), text: text))
+            store(.meal(carbsGrams: amount))
         case .exercise:
-            model.addLogEntry(LogEntry(date: date, kind: .exercise(minutes: minutes), text: text))
+            store(.exercise(minutes: minutes))
         case .note:
-            model.addLogEntry(LogEntry(date: date, kind: .note, text: text))
+            store(.note)
         }
         dismiss()
+    }
+
+    /// Adds the entry, or replaces the one being edited.
+    private func store(_ entryKind: LogEntry.Kind) {
+        if let editingEntry {
+            model.updateLogEntry(LogEntry(id: editingEntry.id, date: date, kind: entryKind, text: text))
+        } else {
+            model.addLogEntry(LogEntry(date: date, kind: entryKind, text: text))
+        }
     }
 }
 

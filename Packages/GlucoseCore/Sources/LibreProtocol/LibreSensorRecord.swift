@@ -136,7 +136,8 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
             return
         }
         calibrationPoints = calibrationPoints.filter { newest.timeIntervalSince($0.date) <= Calibration.maxAgeHours * 3600 }
-        calibration = Calibration.fit(calibrationPoints, now: newest)
+        calibration = Calibration.fit(calibrationPoints, now: newest,
+                                      firstDayEnds: activatedAt.addingTimeInterval(Calibration.firstDayHours * 3600))
     }
 
     /// The MAC address in the sensor's 6-byte answer to the enable-streaming command, which sends it

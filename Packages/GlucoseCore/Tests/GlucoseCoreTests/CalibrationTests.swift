@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import GlucoseCore
 
 final class CalibrationTests: XCTestCase {
@@ -29,6 +30,21 @@ final class CalibrationTests: XCTestCase {
         XCTAssertEqual(calibration.slope, 0.1, accuracy: 0.0001)
         XCTAssertEqual(calibration.intercept, 0, accuracy: 0.001)
         XCTAssertEqual(calibration.pointCount, 2)
+    }
+
+    func testFirstDayCalibrationsCountLess() {
+        // A first-day calibration 60 mg/dL above the signal, then one that matches it.
+        let points = [point(160, raw: 850, hoursAgo: 30), point(100, raw: 850)]
+        let plain = Calibration.fit(points, now: now)
+        let damped = Calibration.fit(points, now: now, firstDayEnds: now.addingTimeInterval(-29 * 3600))
+        let w = pow(0.5, 30.0 / 24)
+        XCTAssertEqual(plain.intercept, 60 * w / (w + 1), accuracy: 0.01)
+        XCTAssertEqual(damped.intercept, 60 * 0.2 * w / (0.2 * w + 1), accuracy: 0.01)
+        XCTAssertLessThan(damped.intercept, plain.intercept / 3)
+        // Only first-day points: all count less alike, so the fit itself is the same.
+        let alone = [point(160, raw: 850, hoursAgo: 2)]
+        XCTAssertEqual(Calibration.fit(alone, now: now, firstDayEnds: now).intercept,
+                       Calibration.fit(alone, now: now).intercept, accuracy: 0.0001)
     }
 
     func testCloseValuesDoNotFitSlope() {

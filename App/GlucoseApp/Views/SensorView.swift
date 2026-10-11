@@ -92,7 +92,7 @@ struct SensorView: View {
                 } header: {
                     Text("Calibration")
                 } footer: {
-                    Text("Abbott's conversion algorithm isn't public, so this app calibrates the sensor's raw signal against your fingersticks. Calibrate 2–3 times in a sensor's first days, then check once a day and calibrate only when a check is far off.")
+                    Text("Abbott's conversion algorithm isn't public, so this app calibrates the sensor's raw signal against your fingersticks. Wait out a sensor's first 12–24 hours, then calibrate twice at different levels, check once a day and calibrate again only when a check is far off.")
                 }
             }
 

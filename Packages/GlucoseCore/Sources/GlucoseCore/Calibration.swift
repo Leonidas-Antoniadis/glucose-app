@@ -29,6 +29,10 @@ public struct Calibration: Codable, Hashable, Sendable {
     /// Slope may deviate from the default by at most this factor.
     public static let slopeRange: ClosedRange<Double> = (defaultSlope * 0.6)...(defaultSlope * 1.6)
     public static let interceptRange: ClosedRange<Double> = -80...80
+    /// A new sensor's signal often settles over its first day, so calibrations from then count
+    /// this much less than later ones.
+    public static let firstDayWeight: Double = 0.2
+    public static let firstDayHours: Double = 24
     /// Two points need at least this spread in reference values for a slope fit.
     public static let minimumSpreadMgdL: Double = 40
 
@@ -59,7 +63,8 @@ public struct Calibration: Codable, Hashable, Sendable {
     }
 
     /// Weighted least-squares fit over recent points, with sane limits on slope and intercept.
-    public static func fit(_ points: [CalibrationPoint], now: Date) -> Calibration {
+    /// Points before `firstDayEnds` (the end of the sensor's first day) weigh `firstDayWeight` as much.
+    public static func fit(_ points: [CalibrationPoint], now: Date, firstDayEnds: Date? = nil) -> Calibration {
         let recent = points.filter {
             let ageHours = now.timeIntervalSince($0.date) / 3600
             return ageHours >= 0 && ageHours <= maxAgeHours && $0.raw > 0
@@ -69,7 +74,8 @@ public struct Calibration: Codable, Hashable, Sendable {
 
         let weights = recent.map { point -> Double in
             let ageHours = now.timeIntervalSince(point.date) / 3600
-            return pow(0.5, ageHours / halfLifeHours)
+            let early = firstDayEnds.map { point.date < $0 } ?? false
+            return pow(0.5, ageHours / halfLifeHours) * (early ? firstDayWeight : 1)
         }
         let totalWeight = weights.reduce(0, +)
         let meanRaw = zip(recent, weights).reduce(0) { $0 + $1.0.raw * $1.1 } / totalWeight

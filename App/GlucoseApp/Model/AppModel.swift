@@ -831,6 +831,25 @@ final class AppModel {
         try? stores.logbook.save(logbook)
     }
 
+    /// Replaces a logbook entry with its edited version (same id).
+    func updateLogEntry(_ entry: LogEntry) {
+        guard let index = logbook.firstIndex(where: { $0.id == entry.id }) else { return }
+        logbook[index] = entry
+        logbook.sort { $0.date > $1.date }
+        try? stores.logbook.save(logbook)
+    }
+
+    /// Edits a fingerstick: the old one leaves the calibration if it was in it, and the edited one
+    /// goes through the same steps as a new one. The value the app showed is kept when the time
+    /// didn't change, since removing the calibration rewrites the readings around it.
+    @discardableResult
+    func editFingerstick(_ old: FingerstickEntry, mgdL: Double, date: Date, calibrate: Bool,
+                         libreLinkMgdL: Double?) -> String {
+        deleteFingersticks([old.id])
+        return addFingerstick(mgdL: mgdL, date: date, calibrate: calibrate, libreLinkMgdL: libreLinkMgdL,
+                              shown: date == old.date ? old.appMgdL : nil)
+    }
+
     func deleteLogEntries(_ ids: Set<UUID>) {
         logbook.removeAll { ids.contains($0.id) }
         try? stores.logbook.save(logbook)
@@ -838,13 +857,14 @@ final class AppModel {
 
     /// Records a fingerstick. Returns a message describing what happened.
     @discardableResult
-    func addFingerstick(mgdL: Double, date: Date, calibrate: Bool, libreLinkMgdL: Double? = nil) -> String {
+    func addFingerstick(mgdL: Double, date: Date, calibrate: Bool, libreLinkMgdL: Double? = nil,
+                        shown savedShown: Double? = nil) -> String {
         var pointID: UUID?
         var message = "Fingerstick saved."
         // What the app showed for that moment (the newest reading at or before it), kept with the
         // check: a calibration, this one included, rewrites the readings around it. Taken before
         // calibrating, so a stick used to calibrate is scored against what was shown before it.
-        let shown: Double? = readings.last(where: {
+        let shown: Double? = savedShown ?? readings.last(where: {
             $0.timestamp <= date && date.timeIntervalSince($0.timestamp) <= 5 * 60
         })?.mgdL
         if calibrate {
@@ -879,6 +899,9 @@ final class AppModel {
         case .applied(let id)?:
             pointID = id
             recalibrateRecent()
+            if record.ageMinutes(at: date) < Int(Calibration.firstDayHours * 60) {
+                return "Calibrated. It's the sensor's first day, when its signal is still settling, so this calibration will count less once you calibrate after the first day."
+            }
             return "Calibrated. Values from the last 30 minutes and new readings use this fingerstick."
         case .warmingUp?:
             return "Saved, but not used for calibration: the sensor is still warming up."
