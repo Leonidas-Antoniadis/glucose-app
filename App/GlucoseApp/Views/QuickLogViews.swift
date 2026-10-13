@@ -12,20 +12,29 @@ struct LoggedToast: Identifiable, Equatable {
 /// and a long press repeats the last dose or opens the full form.
 struct HomeQuickLog: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Binding var logged: LoggedToast?
     @State private var doseSheet: LogEntry.InsulinType?
     @State private var fullForm: QuickLogKind?
 
+    /// The three logged most often, always in view, in the same order as the tiles below them.
+    private static let main: [QuickLogKind] = [.fastInsulin, .bloodGlucose, .food]
+    /// The rest, behind the "…" button.
+    private static let more: [QuickLogKind] = [.slowInsulin, .exercise, .note]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(QuickLogKind.allCases) { kind in
-                        Button { tap(kind) } label: { QuickLogChip(kind: kind) }
-                            .buttonStyle(.plain)
-                            .contentShape(.contextMenuPreview, Capsule())
-                            .contextMenu { menu(for: kind) }
+            if dynamicTypeSize.isAccessibilitySize {
+                // Large text doesn't fit three across: everything scrolls instead.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Self.main + Self.more) { chip($0, fills: false) }
                     }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Self.main) { chip($0, fills: true) }
+                    moreMenu
                 }
             }
             LastLoggedTiles()
@@ -38,6 +47,39 @@ struct HomeQuickLog: View {
             doseSheet = nil
             fullForm = nil
         }
+    }
+
+    private func chip(_ kind: QuickLogKind, fills: Bool) -> some View {
+        Button { tap(kind) } label: {
+            QuickLogChip(kind: kind, title: kind == .bloodGlucose ? "Fingerstick" : nil, fills: fills)
+        }
+        .buttonStyle(.plain)
+        .contentShape(.contextMenuPreview, Capsule())
+        .contextMenu { menu(for: kind) }
+    }
+
+    /// Slow insulin, exercise and notes, with the last slow dose ready to repeat.
+    private var moreMenu: some View {
+        Menu {
+            if let last = QuickLog.lastInsulin(.long, in: model.logbook) {
+                Button("Slow insulin \(LogEntry.format(last.units)) U again", systemImage: "arrow.counterclockwise") {
+                    log([LogEntry(date: Date(), kind: .insulin(units: last.units, type: .long))],
+                        "Slow insulin \(LogEntry.format(last.units)) U logged")
+                }
+            }
+            ForEach(Self.more) { kind in
+                Button(kind.title, systemImage: kind.symbolName) { tap(kind) }
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.subheadline.weight(.semibold))
+                .frame(width: 20)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
+                .background(Color.secondary.opacity(0.15), in: Capsule())
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityLabel("More: slow insulin, exercise, note")
     }
 
     private func tap(_ kind: QuickLogKind) {
@@ -77,18 +119,25 @@ struct HomeQuickLog: View {
 /// A colored capsule for one kind of log entry.
 struct QuickLogChip: View {
     let kind: QuickLogKind
+    /// A shorter title where space is tight ("Fingerstick" for blood glucose on Home).
+    var title: String?
+    /// Takes an equal share of the row's width.
+    var fills = false
 
     var body: some View {
-        Label(kind.title, systemImage: kind.symbolName)
+        Label(title ?? kind.title, systemImage: kind.symbolName)
             .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 12)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, fills ? 8 : 12)
             .padding(.vertical, 8)
+            .frame(maxWidth: fills ? .infinity : nil)
             .background(kind.tint.opacity(0.15), in: Capsule())
             .foregroundStyle(kind.tint)
     }
 }
 
-/// When you last took fast insulin, ate and checked with a fingerstick, with the clock time,
+/// When you last took fast insulin, checked with a fingerstick and ate (the buttons' order), with the clock time,
 /// so a dose isn't taken twice by mistake and the daily check isn't forgotten.
 struct LastLoggedTiles: View {
     @Environment(AppModel.self) private var model
@@ -103,9 +152,9 @@ struct LastLoggedTiles: View {
             let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
             layout {
                 tile(.fastInsulin, amount: fast.map { "\(LogEntry.format($0.units)) U" }, date: fast?.date, now: context.date)
-                tile(.food, amount: nil, date: QuickLog.lastMeal(in: model.logbook), now: context.date)
                 tile(.bloodGlucose, title: "Fingerstick", amount: stick.map { model.unit.format(mgdL: $0.mgdL, includeSymbol: true) },
                      date: stick?.date, now: context.date)
+                tile(.food, amount: nil, date: QuickLog.lastMeal(in: model.logbook), now: context.date)
             }
         }
     }
