@@ -99,6 +99,7 @@ struct SensorView: View {
             }
 
             Section("Accuracy") {
+                let all = model.accuracy
                 // Like the Accuracy screen: only checks at steady times, unless all checks were chosen there.
                 let counted = steadyOnly ? all.steadyTimes : all
                 // Each sensor has its own accuracy; the demo has no real sensor to split by.
