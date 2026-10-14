@@ -114,8 +114,9 @@ public struct CalibrationAdvice: Hashable, Sendable {
     }
 }
 
-/// Advice for a fingerstick, following the calibration guide: no calibration in a sensor's first
-/// 12–24 hours; from day 2 two at different levels; after that only when a check is far off. Always
+/// Advice for a fingerstick, following the calibration guide: in a sensor's first 12–24 hours only
+/// a first calibration or one when it's far off; from day 2 two at different levels; after that
+/// only when a check is far off. Always
 /// with glucose steady: no fast insulin or food in the 2 hours before and a flat arrow, since the
 /// sensor trails blood by 5–10 minutes and while glucose moves part of any difference is that delay.
 public enum CalibrationAdvisor {
@@ -133,7 +134,8 @@ public enum CalibrationAdvisor {
     public static let waitInsulinUnits = 1.0
     /// A one-minute step this big isn't glucose: pressure on the sensor or a knock.
     static let jumpMgdL = 10.0
-    /// Younger than this a sensor isn't calibrated at all; until a day old it's a warning.
+    /// Younger than this a sensor's signal is still settling: a warning, not a stop. A first
+    /// calibration, or one when the sensor is far off, is still worth it.
     public static let youngSensorHours = 12.0
 
     /// What the accuracy screen counts as on target: within 15 mg/dL below 100 mg/dL, 15 % from there up.
@@ -193,7 +195,7 @@ public enum CalibrationAdvisor {
         let warnings = conditions.filter { $0.status == .warning }
         let unsettled = !problems.isEmpty || warnings.count >= 2
         let isLow = problems.contains { $0.id == "low" }
-        let isYoung = problems.contains { $0.id == "day" }
+        let onFirstDay = date.timeIntervalSince(sensor.activatedAt) < Calibration.firstDayHours * 3600
         let because = sentence((problems.isEmpty ? warnings : problems).prefix(2).map(\.reason))
         // When everything logged has stopped moving glucose.
         var settleTimes = [insulinSettles].compactMap { $0 }
@@ -208,7 +210,6 @@ public enum CalibrationAdvisor {
             settleTimes.append(date.addingTimeInterval((LogContext.afterExerciseMinutes - since) * 60))
         }
         let around = settleTimes.max().flatMap { $0 > date ? ", around \(time($0))" : nil } ?? ""
-        let young = "The sensor is only \(Int(date.timeIntervalSince(sensor.activatedAt) / 3600)) h old: don't calibrate in its first 12–24 hours."
 
         var info = input.isDemo ? [] : [calibrationFactor(sensor.calibration, date: date)]
         if let lastDay = lastDayFactor(sensor, date: date) { info.append(lastDay) }
@@ -221,10 +222,6 @@ public enum CalibrationAdvisor {
                 return CalibrationAdvice(verdict: .wait, title: "Not a good time to calibrate",
                                          summary: "Check with your meter and treat a low first. Calibrate later, when glucose is steady.",
                                          factors: factors)
-            }
-            if isYoung {
-                return CalibrationAdvice(verdict: .wait, title: "Not a good time to calibrate",
-                                         summary: young + " Take checks with Use to calibrate off until then.", factors: factors)
             }
             if unsettled {
                 return CalibrationAdvice(verdict: .wait, title: "Not a good time to calibrate",
@@ -289,7 +286,8 @@ public enum CalibrationAdvisor {
         if let checksSummary = checksFactor(checks, sensor: sensor, difference: difference, meter: meter, unit: unit) {
             factors.append(checksSummary)
         }
-        if !isYoung, let level = levelFactor(levels, hasSlope: hasSlope, newLevel: newLevel, unit: unit) {
+        // The second level is for day 2 on: first-day calibrations count less once there are later ones.
+        if !onFirstDay, let level = levelFactor(levels, hasSlope: hasSlope, newLevel: newLevel, unit: unit) {
             factors.append(level)
         }
         func advice(_ verdict: CalibrationAdvice.Verdict, _ title: String, _ summary: String,
@@ -300,9 +298,6 @@ public enum CalibrationAdvisor {
         if isLow {
             return advice(.wait, "Treat the low first",
                           "Glucose moves fast after treating a low. Save this without calibrating, and calibrate later when glucose is steady.")
-        }
-        if isYoung {
-            return advice(.wait, "Don't calibrate yet", young + " Save this as a check: it still measures accuracy.")
         }
         if isOutlier {
             let far = "\(unit.format(mgdL: meter, includeSymbol: true)) is far from the sensor's \(unit.formatReading(mgdL: shown))."
@@ -318,8 +313,11 @@ public enum CalibrationAdvisor {
             }
             return advice(.testAgain, "Test again first", summary)
         }
-        // The first two calibrations are worth it even when the sensor is close: they set its level and slope.
-        let buildsCalibration = firstCalibration || newLevel
+        // The first two calibrations are worth it even when the sensor is close: they set its level
+        // and, from day 2, its slope. On a new sensor that's only a warning: values are rough
+        // estimates until the first calibration, and a first-day one fades once you calibrate again.
+        let secondLevel = newLevel && !onFirstDay
+        let buildsCalibration = firstCalibration || secondLevel
         if close, !buildsCalibration {
             return advice(.notNeeded, "No need to calibrate",
                           (abs(difference) < 1 ? "The sensor shows the same as your meter."
@@ -339,7 +337,7 @@ public enum CalibrationAdvisor {
             summary = "It agrees with your fingerstick at \(time(pending.date)): the sensor really reads \(size) \(direction)."
         } else if firstCalibration {
             summary = "Values are rough estimates until the first calibration."
-        } else if newLevel {
+        } else if secondLevel {
             summary = "Your calibrations so far were near \(levelText(levels, unit: unit)): one at a second level lets the app fit the slope."
         } else if farOff {
             summary = "The sensor reads \(size) \(direction) (\(percent) %), more than \(farBand) off."
@@ -499,8 +497,8 @@ public enum CalibrationAdvisor {
     static func dayFactor(_ sensor: CalibrationSensor, date: Date) -> Factor {
         let hours = date.timeIntervalSince(sensor.activatedAt) / 3600
         if hours < youngSensorHours {
-            return Factor(id: "day", status: .problem, title: "Sensor only \(Int(hours)) h old",
-                          detail: "Its signal is still settling, so a calibration now can make later values wrong.",
+            return Factor(id: "day", status: .warning, title: "Sensor only \(Int(hours)) h old",
+                          detail: "Its signal is still settling: calibrate only if it isn't calibrated yet or is far off. A first-day calibration counts a fifth as much once you calibrate again.",
                           reason: "the sensor is only \(Int(hours)) h old")
         }
         if hours < Calibration.firstDayHours {

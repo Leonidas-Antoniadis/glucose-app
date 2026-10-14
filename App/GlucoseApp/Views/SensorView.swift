@@ -94,7 +94,7 @@ struct SensorView: View {
                 } header: {
                     Text("Calibration")
                 } footer: {
-                    Text("Abbott's conversion algorithm isn't public, so this app calibrates the sensor's raw signal against your fingersticks. Wait out a sensor's first 12–24 hours, then calibrate twice at different levels, check once a day and calibrate again only when a check is far off. The blood glucose form tells you whether each one is worth calibrating with.")
+                    Text("Abbott's conversion algorithm isn't public, so this app calibrates the sensor's raw signal against your fingersticks. In a sensor's first 12–24 hours calibrate only if it's far off or not calibrated yet, then calibrate twice at different levels, check once a day and calibrate again only when a check is far off. The blood glucose form tells you whether each one is worth calibrating with.")
                 }
             }
 

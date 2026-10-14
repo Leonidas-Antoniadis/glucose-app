@@ -150,7 +150,7 @@ struct StatusBanners: View {
     }
 
     /// The uncalibrated banner, with whether now is the moment for the first calibration (the
-    /// calibration advice for this moment: not in the sensor's first 12–24 hours, glucose steady).
+    /// calibration advice for this moment: glucose steady, no fast insulin or food in the last 2 hours).
     private var uncalibratedText: String {
         let advice = model.calibrationAdvice(meterMgdL: nil, at: now)
         switch advice.verdict {

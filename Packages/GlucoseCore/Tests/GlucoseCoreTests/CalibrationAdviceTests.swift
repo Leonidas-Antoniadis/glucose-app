@@ -8,14 +8,14 @@ final class CalibrationAdviceTests: XCTestCase {
         now.addingTimeInterval(-minutes * 60)
     }
 
-    /// A sensor started `startedHoursAgo` ago, calibrated 10 hours ago at 120 mg/dL so that a value
-    /// is its raw signal ÷ 8.5 (or never calibrated).
-    private func sensor(calibrated: Bool = true, startedHoursAgo: Double = 72,
+    /// A sensor started `startedHoursAgo` ago, calibrated `calibratedMinutesAgo` (10 hours) ago at
+    /// 120 mg/dL so that a value is its raw signal ÷ 8.5 (or never calibrated).
+    private func sensor(calibrated: Bool = true, startedHoursAgo: Double = 72, calibratedMinutesAgo: Double = 600,
                         pending: CalibrationPoint? = nil) -> CalibrationSensor {
         let activatedAt = ago(startedHoursAgo * 60)
-        let points = calibrated ? [CalibrationPoint(date: ago(600), referenceMgdL: 120, raw: 1020)] : []
+        let points = calibrated ? [CalibrationPoint(date: ago(calibratedMinutesAgo), referenceMgdL: 120, raw: 1020)] : []
         return CalibrationSensor(serial: "TEST", activatedAt: activatedAt, warmUpEndsAt: activatedAt.addingTimeInterval(3600),
-                                 lifetimeDays: 15, calibration: Calibration.fit(points, now: ago(600)),
+                                 lifetimeDays: 15, calibration: Calibration.fit(points, now: ago(calibratedMinutesAgo)),
                                  calibrationPoints: points, unconfirmedPoint: pending)
     }
 
@@ -207,13 +207,28 @@ final class CalibrationAdviceTests: XCTestCase {
 
     // MARK: Not now, or not at all
 
-    func testNewSensorSaysDontCalibrateYet() {
-        let advice = advise(meter: 155, readings: readings(startedHoursAgo: 6) { _ in 120 },
-                            sensor: sensor(calibrated: false, startedHoursAgo: 6))
-        XCTAssertEqual(advice.verdict, .wait)
-        XCTAssertEqual(advice.title, "Don't calibrate yet")
-        XCTAssertTrue(advice.summary.hasPrefix("The sensor is only 6 h old: don't calibrate in its first 12–24 hours."), advice.summary)
-        XCTAssertEqual(factor("day", in: advice)?.title, "Sensor only 6 h old")
+    func testNewSensorIsOnlyAWarning() {
+        // Uncalibrated values are rough estimates, so a first calibration is still worth it.
+        let first = advise(meter: 124, readings: readings(startedHoursAgo: 6) { _ in 120 },
+                           sensor: sensor(calibrated: false, startedHoursAgo: 6))
+        XCTAssertEqual(factor("day", in: first)?.status, .warning)
+        XCTAssertEqual(factor("day", in: first)?.title, "Sensor only 6 h old")
+        XCTAssertEqual(first.verdict, .calibrate)
+        XCTAssertTrue(first.summary.hasSuffix("Now is good enough, though the sensor is only 6 h old."), first.summary)
+
+        // Calibrated already: far off is worth calibrating again, close isn't.
+        let young = sensor(startedHoursAgo: 8, calibratedMinutesAgo: 120)
+        let series = readings(startedHoursAgo: 8) { _ in 120 }
+        XCTAssertEqual(advise(meter: 155, readings: series, sensor: young).verdict, .calibrate)
+        XCTAssertEqual(advise(meter: 130, readings: series, sensor: young).verdict, .notNeeded)
+    }
+
+    func testNoSecondLevelOnTheFirstDay() {
+        // At 170 after a calibration at 120 the slope could be fitted, but not from first-day calibrations.
+        let advice = advise(meter: 170, readings: readings(startedHoursAgo: 8) { _ in 165 },
+                            sensor: sensor(startedHoursAgo: 8, calibratedMinutesAgo: 120))
+        XCTAssertEqual(advice.verdict, .notNeeded)
+        XCTAssertNil(factor("level", in: advice))
     }
 
     func testLowSaysTreatFirst() {

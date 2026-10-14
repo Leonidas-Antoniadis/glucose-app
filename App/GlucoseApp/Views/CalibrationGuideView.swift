@@ -32,7 +32,7 @@ struct CalibrationGuideView: View {
             }
 
             Section {
-                GuideRow(mark: "1", text: "New sensor: don't calibrate in its first 12–24 hours. Its signal is still settling, and a calibration then makes later values wrong. Take checks with \"Use to calibrate\" off instead.")
+                GuideRow(mark: "1", text: "New sensor: its signal is still settling for the first 12–24 hours, so take checks with \"Use to calibrate\" off. Calibrate then only if it isn't calibrated yet or a check is far off; such a calibration counts a fifth as much once you calibrate again.")
                 GuideRow(mark: "2", text: "From day 2: calibrate twice when glucose is steady, once at a lower value and once at a higher one, at least \(u.format(mgdL: 40, includeSymbol: true)) apart.")
                 GuideRow(mark: "3", text: "Then stop calibrating routinely. Take one check a day with \"Use to calibrate\" off: it keeps measuring accuracy without changing anything.")
                 GuideRow(mark: "4", text: "Calibrate again only when a check is red under Accuracy → Times it was off (more than \(u.format(mgdL: 20, includeSymbol: true)) or 20 %) and glucose is steady. Orange (15–20 %) can be meter error: calibrate only if the next check is off the same way.")
