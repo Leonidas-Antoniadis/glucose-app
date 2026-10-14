@@ -8,8 +8,6 @@ struct SensorView: View {
     @State private var confirmForget = false
     @State private var confirmStart = false
     @State private var showingFingerstick = false
-    /// Shared with the Accuracy screen's choice.
-    @AppStorage(AccuracyView.steadyOnlyKey) private var steadyOnly = true
 
     var body: some View {
         @Bindable var model = model
@@ -100,20 +98,18 @@ struct SensorView: View {
 
             Section("Accuracy") {
                 let all = model.accuracy
-                // Like the Accuracy screen: only checks at steady times, unless all checks were chosen there.
-                let counted = steadyOnly ? all.steadyTimes : all
                 // Each sensor has its own accuracy; the demo has no real sensor to split by.
-                let sensorChecks = all.forSensor(model.isDemo ? nil : sensor.record?.serial)
-                let report = steadyOnly ? sensorChecks.steadyTimes : sensorChecks
+                let report = all.forSensor(model.isDemo ? nil : sensor.record?.serial)
                 if let mard = report.mard, let within = report.within15_15 {
-                    MetricRow(label: (model.isDemo ? "MARD (last 14 days)" : "MARD, this sensor") + (steadyOnly ? " · steady" : ""),
+                    MetricRow(label: model.isDemo ? "MARD (last 14 days)" : "MARD, this sensor",
                               value: String(format: "%.1f %%", mard), warning: mard > 15)
+                    // Without the checks after insulin, food or exercise, or while glucose moved.
+                    if let steady = report.steadyTimes.mard {
+                        MetricRow(label: "At steady times", value: String(format: "%.1f %%", steady))
+                    }
                     MetricRow(label: "Within \(model.unit.format(mgdL: 15, includeSymbol: true)) or 15%",
                               value: String(format: "%.0f %%", within * 100))
                     MetricRow(label: "Comparisons", value: "\(report.pairs.count)")
-                } else if steadyOnly, !sensorChecks.pairs.isEmpty {
-                    Text("None of these checks were at a steady time: fast insulin was working, food or exercise was recent, or glucose was moving. Accuracy details can show all checks.")
-                        .foregroundStyle(.secondary)
                 } else if !model.isDemo, sensor.record != nil, all.mard != nil {
                     Text("No checks for this sensor yet. Add a fingerstick to measure it.")
                         .foregroundStyle(.secondary)
@@ -124,9 +120,9 @@ struct SensorView: View {
                     Text("Add fingersticks to measure accuracy.")
                         .foregroundStyle(.secondary)
                 }
-                if !model.isDemo, let mard = counted.mard, counted.pairs.count != report.pairs.count {
+                if !model.isDemo, let mard = all.mard, all.pairs.count != report.pairs.count {
                     MetricRow(label: "MARD, all sensors (14 days)",
-                              value: String(format: "%.1f %% · %d checks", mard, counted.pairs.count))
+                              value: String(format: "%.1f %% · %d checks", mard, all.pairs.count))
                 }
                 NavigationLink {
                     AccuracyView()

@@ -8,9 +8,6 @@ struct AccuracyView: View {
     @Environment(AppModel.self) private var model
     @State private var fullReport: AccuracyReport?
     @State private var allSensors = false
-    /// Only checks taken at steady times count, unless all are chosen.
-    @AppStorage(Self.steadyOnlyKey) private var steadyOnly = true
-    static let steadyOnlyKey = "accuracySteadyOnly"
 
     /// The paired sensor's serial; nil (all sensors) in the demo or with none paired.
     private var currentSerial: String? { model.isDemo ? nil : model.sensor.record?.serial }
@@ -36,30 +33,18 @@ struct AccuracyView: View {
                 }
             }
             if let report {
-                let shown = steadyOnly ? report.steadyTimes : report
-                if !report.pairs.isEmpty {
-                    filter(report)
-                }
-                if let mard = shown.mard {
-                    summary(shown, mard: mard)
-                    misses(shown)
-                    errorGrid(shown)
-                    breakdown(shown, overall: mard)
+                if let mard = report.mard {
+                    summary(report, mard: mard)
+                    steadyTimes(report)
+                    misses(report)
+                    errorGrid(report)
+                    breakdown(report, overall: mard)
                     Section {
                         NavigationLink {
                             CalibrationGuideView()
                         } label: {
                             Label("What's a good MARD, and when to calibrate", systemImage: "book")
                         }
-                    }
-                } else if steadyOnly, !report.pairs.isEmpty {
-                    let count = report.pairs.count
-                    ContentUnavailableView {
-                        Label("No checks at steady times", systemImage: "drop")
-                    } description: {
-                        Text(count == 1
-                             ? "Your check was taken while fast insulin was working, after food or exercise, or while glucose moved. Choose All checks to see it."
-                             : "All \(count) checks were taken while fast insulin was working, after food or exercise, or while glucose moved. Choose All checks to see them.")
                     }
                 } else {
                     ContentUnavailableView {
@@ -98,17 +83,18 @@ struct AccuracyView: View {
 
     // MARK: Sections
 
-    /// Steady times or all checks, and what steady times leave out.
+    /// The MARD of the checks at steady times, next to the main one that counts every check. The
+    /// main one is what you see day to day and compares with Abbott's (which counts meals and
+    /// insulin too); this one shows how good the calibration is, without the sensor's delay.
     @ViewBuilder
-    private func filter(_ report: AccuracyReport) -> some View {
+    private func steadyTimes(_ report: AccuracyReport) -> some View {
+        let steady = report.steadyTimes
         Section {
-            Picker("Checks", selection: $steadyOnly) {
-                Text("Steady times").tag(true)
-                Text("All checks").tag(false)
-            }
-            .pickerStyle(.segmented)
+            MetricRow(label: "At steady times",
+                      value: steady.mard.map { String(format: "%.1f %% · %d of %d checks", $0, steady.pairs.count, report.pairs.count) }
+                          ?? "no checks yet")
         } footer: {
-            Text(filterText(report))
+            Text(steadyText(report))
         }
     }
 
@@ -239,11 +225,8 @@ struct AccuracyView: View {
     @ViewBuilder
     private func breakdown(_ report: AccuracyReport, overall: Double) -> some View {
         let u = model.unit
-        // At steady times only, nothing was moving, so those rows would be empty.
-        let groups: [AccuracyReport.Group] = steadyOnly ? [.belowRange, .inRange, .aboveRange, .firstDay, .laterDays]
-            : AccuracyReport.Group.allCases
         Section {
-            ForEach(groups, id: \.self) { group in
+            ForEach(AccuracyReport.Group.allCases, id: \.self) { group in
                 BreakdownRow(title: title(group, unit: u), subtitle: subtitle(group, unit: u),
                              summary: report.summary(group), overall: overall)
             }
@@ -256,10 +239,11 @@ struct AccuracyView: View {
 
     // MARK: Text
 
-    private func filterText(_ report: AccuracyReport) -> String {
-        var text = "Steady times leave out checks taken within 2 hours of fast insulin or food (or with 0.5 U or more still "
-            + "working), within an hour of exercise, or while glucose moved \(model.unit.formatRate(mgdLPerMinute: 1)) or more. "
-            + "Then the sensor's 5–10 minute delay, not its accuracy, makes most of the difference."
+    private func steadyText(_ report: AccuracyReport) -> String {
+        var text = "The MARD above counts every check, as Abbott's does: it's what you see day to day. This one leaves out "
+            + "checks within 2 hours of fast insulin or food (or with 0.5 U or more still working), within an hour of exercise, "
+            + "or while glucose moved \(model.unit.formatRate(mgdLPerMinute: 1)) or more, when the sensor's 5–10 minute delay "
+            + "makes most of the difference. It shows how good the calibration is."
         let left = report.pairs.count - report.steadyTimes.pairs.count
         guard left > 0 else { return text }
         let counts = report.disturbanceCounts
