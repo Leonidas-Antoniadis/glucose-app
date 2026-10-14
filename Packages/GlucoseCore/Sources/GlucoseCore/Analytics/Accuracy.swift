@@ -271,23 +271,28 @@ public struct AccuracyReport: Hashable, Sendable {
         let formatter = ISO8601DateFormatter()
         var lines = ["time,meter_mgdl,app_mgdl,librelink_mgdl,difference_mgdl,abs_rel_diff_pct,zone,sensor_day,rate_mgdl_per_min,"
                      + "fast_insulin_on_board_u,minutes_since_fast_insulin,minutes_since_food,minutes_since_exercise,steady_time"]
+        // One call per field: a long list of mixed expressions is too much for the type checker.
+        func number(_ value: Double?, _ format: String = "%.0f") -> String {
+            value.map { String(format: format, $0) } ?? ""
+        }
         for pair in pairs {
-            lines.append([
+            let fields: [String] = [
                 formatter.string(from: pair.date),
-                String(format: "%.0f", pair.referenceMgdL),
-                String(format: "%.0f", pair.sensorMgdL),
-                pair.libreLinkMgdL.map { String(format: "%.0f", $0) } ?? "",
-                String(format: "%.0f", pair.difference),
-                String(format: "%.1f", pair.absoluteRelativeDifference * 100),
+                number(pair.referenceMgdL),
+                number(pair.sensorMgdL),
+                number(pair.libreLinkMgdL),
+                number(pair.difference),
+                number(pair.absoluteRelativeDifference * 100, "%.1f"),
                 pair.zone.rawValue,
                 pair.sensorDay.map(String.init) ?? "",
-                pair.ratePerMinute.map { String(format: "%.2f", $0) } ?? "",
-                String(format: "%.1f", pair.insulinOnBoard),
-                pair.minutesSinceInsulin.map { String(format: "%.0f", $0) } ?? "",
-                pair.minutesSinceFood.map { String(format: "%.0f", $0) } ?? "",
-                pair.minutesSinceExercise.map { String(format: "%.0f", $0) } ?? "",
+                number(pair.ratePerMinute, "%.2f"),
+                number(pair.insulinOnBoard, "%.1f"),
+                number(pair.minutesSinceInsulin),
+                number(pair.minutesSinceFood),
+                number(pair.minutesSinceExercise),
                 String(pair.isSteadyTime),
-            ].joined(separator: ","))
+            ]
+            lines.append(fields.joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
     }

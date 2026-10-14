@@ -250,8 +250,10 @@ public enum CalibrationAdvisor {
         let farBand = meter < 100 ? unit.format(mgdL: 20, includeSymbol: true) : "20 %"
         let movingRate = rate.flatMap { abs($0) >= steadyRate ? $0 : nil }
         // While glucose moves, blood is ahead of the sensor: on a rise a meter reads higher.
-        let delayExplains = movingRate.map {
-            difference * $0 > 0 && abs(difference) <= abs($0) * lagMinutes + max(15, 0.15 * meter)
+        let allowance: Double = max(15, 0.15 * meter)
+        let delayExplains = movingRate.map { moving -> Bool in
+            let delayMgdL = abs(moving) * lagMinutes
+            return difference * moving > 0 && abs(difference) <= delayMgdL + allowance
         } ?? false
         let pending = input.isDemo ? nil : sensor.unconfirmedPoint
         let confirms = pending.flatMap { point in
