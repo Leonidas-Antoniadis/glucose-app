@@ -16,10 +16,19 @@ public struct AccuracyReport: Hashable, Sendable {
         public let ratePerMinute: Double?
         /// The fingerstick was then used to calibrate (`sensorMgdL` is still the value from before).
         public let usedForCalibration: Bool
+        /// Fast-acting insulin still working at the time, in units.
+        public let insulinOnBoard: Double
+        /// Minutes since the newest fast-acting dose, when one was still working.
+        public let minutesSinceInsulin: Double?
+        /// Minutes since food, when there was some in the 3 hours before.
+        public let minutesSinceFood: Double?
+        /// Minutes since exercise ended, when it was in the hour before (0 during it).
+        public let minutesSinceExercise: Double?
 
         public init(date: Date, referenceMgdL: Double, sensorMgdL: Double, libreLinkMgdL: Double? = nil,
                     sensorSerial: String? = nil, sensorDay: Int? = nil, ratePerMinute: Double? = nil,
-                    usedForCalibration: Bool = false) {
+                    usedForCalibration: Bool = false, insulinOnBoard: Double = 0, minutesSinceInsulin: Double? = nil,
+                    minutesSinceFood: Double? = nil, minutesSinceExercise: Double? = nil) {
             self.date = date
             self.referenceMgdL = referenceMgdL
             self.sensorMgdL = sensorMgdL
@@ -28,6 +37,10 @@ public struct AccuracyReport: Hashable, Sendable {
             self.sensorDay = sensorDay
             self.ratePerMinute = ratePerMinute
             self.usedForCalibration = usedForCalibration
+            self.insulinOnBoard = insulinOnBoard
+            self.minutesSinceInsulin = minutesSinceInsulin
+            self.minutesSinceFood = minutesSinceFood
+            self.minutesSinceExercise = minutesSinceExercise
         }
 
         /// Sensor minus meter, in mg/dL: negative when the sensor reads low.
@@ -50,11 +63,39 @@ public struct AccuracyReport: Hashable, Sendable {
         public var zone: ErrorGridZone {
             ParkesErrorGrid.zone(referenceMgdL: referenceMgdL, sensorMgdL: sensorMgdL)
         }
+
+        /// What was moving glucose at the time, if anything.
+        public var disturbances: [Disturbance] {
+            var result: [Disturbance] = []
+            // As the calibration guide says: no fast insulin in the 2 hours before, nor much still working.
+            if insulinOnBoard >= InsulinOnBoard.activeUnits || (minutesSinceInsulin.map { $0 < LogContext.insulinMinutes } ?? false) {
+                result.append(.insulin)
+            }
+            if let minutes = minutesSinceFood, minutes < LogContext.foodMinutes { result.append(.food) }
+            if minutesSinceExercise != nil { result.append(.exercise) }
+            if let rate = ratePerMinute {
+                if abs(rate) >= CalibrationAdvisor.steadyRate { result.append(.moving) }
+            } else {
+                result.append(.unknownTrend)
+            }
+            return result
+        }
+
+        /// Taken at a steady time: no fast insulin in the 2 hours before (nor 0.5 U still working),
+        /// no food in the 2 hours before, no exercise in the hour before, and glucose changing less
+        /// than 1 mg/dL per minute.
+        public var isSteadyTime: Bool { disturbances.isEmpty }
+    }
+
+    /// What makes a check unfair to the sensor: glucose was moving or about to, so the sensor's
+    /// 5–10 minute delay counts as error.
+    public enum Disturbance: String, CaseIterable, Sendable {
+        case insulin, food, exercise, moving, unknownTrend
     }
 
     /// Conditions the accuracy is broken down by.
     public enum Group: String, CaseIterable, Sendable {
-        case belowRange, inRange, aboveRange, firstDay, laterDays, steady, moving, fast
+        case belowRange, inRange, aboveRange, firstDay, laterDays, steady, moving, fast, insulinActive, afterFood
 
         func contains(_ pair: Pair) -> Bool {
             switch self {
@@ -66,6 +107,8 @@ public struct AccuracyReport: Hashable, Sendable {
             case .steady: return pair.ratePerMinute.map { abs($0) < 1 } ?? false
             case .moving: return pair.ratePerMinute.map { (1...2).contains(abs($0)) } ?? false
             case .fast: return pair.ratePerMinute.map { abs($0) > 2 } ?? false
+            case .insulinActive: return pair.disturbances.contains(.insulin)
+            case .afterFood: return pair.disturbances.contains(.food)
             }
         }
     }
@@ -98,10 +141,13 @@ public struct AccuracyReport: Hashable, Sendable {
     /// Matches each fingerstick with the newest reading of its sensor at or before it, within
     /// `maxGapMinutes`: never a later one, which would know where glucose went. The app's value
     /// is the one saved with the check when there is one (later calibrations rewrite readings).
-    /// Also notes the sensor day and how fast glucose was moving (the 15 minutes before).
-    public init(fingersticks: [FingerstickEntry], readings: [GlucoseReading], maxGapMinutes: Double = 5,
-                includeCalibrationPoints: Bool = false) {
+    /// Also notes the sensor day, how fast glucose was moving (the 15 minutes before), and from
+    /// `logbook` the fast insulin still working and recent food and exercise.
+    public init(fingersticks: [FingerstickEntry], readings: [GlucoseReading], logbook: [LogEntry] = [],
+                maxGapMinutes: Double = 5, includeCalibrationPoints: Bool = false) {
         let sorted = readings.sorted { $0.timestamp < $1.timestamp }
+        let entries = logbook.filter { if case .note = $0.kind { return false } else { return true } }
+            .sorted { $0.date < $1.date }
         let checks = fingersticks.filter { includeCalibrationPoints || Self.isScored($0) }
         let pairs = checks.compactMap { stick -> Pair? in
             guard let index = Self.latestIndex(atOrBefore: stick.date, in: sorted, serial: stick.sensorSerial,
@@ -113,10 +159,14 @@ public struct AccuracyReport: Hashable, Sendable {
                 if sorted[i].sensorSerial == reading.sensorSerial { window.append(sorted[i]) }
                 i -= 1
             }
+            let nearby = Self.logEntries(entries, from: stick.date.addingTimeInterval(-LogContext.lookback), through: stick.date)
+            let context = LogContext.at(stick.date, in: nearby)
             return Pair(date: stick.date, referenceMgdL: stick.mgdL, sensorMgdL: stick.appMgdL ?? reading.mgdL,
                         libreLinkMgdL: stick.libreLinkMgdL, sensorSerial: reading.sensorSerial,
                         sensorDay: reading.minuteIndex / 1440 + 1, ratePerMinute: Trend.ratePerMinute(window),
-                        usedForCalibration: stick.usedForCalibration)
+                        usedForCalibration: stick.usedForCalibration, insulinOnBoard: context.insulinOnBoard,
+                        minutesSinceInsulin: context.minutesSinceInsulin, minutesSinceFood: context.minutesSinceFood,
+                        minutesSinceExercise: context.minutesSinceExercise)
         }
         self.init(pairs: pairs, unpairedCount: checks.count - pairs.count)
     }
@@ -130,6 +180,20 @@ public struct AccuracyReport: Hashable, Sendable {
     public static func isScored(_ stick: FingerstickEntry) -> Bool {
         if stick.usedForCalibration { return stick.appMgdL != nil }
         return stick.offeredForCalibration != true
+    }
+
+    /// The same report with only the checks taken at steady times.
+    public var steadyTimes: AccuracyReport {
+        AccuracyReport(pairs: pairs.filter(\.isSteadyTime), unpairedCount: unpairedCount)
+    }
+
+    /// How many checks each disturbance keeps out of the steady times (a check can have several).
+    public var disturbanceCounts: [Disturbance: Int] {
+        var counts: [Disturbance: Int] = [:]
+        for pair in pairs {
+            for disturbance in pair.disturbances { counts[disturbance, default: 0] += 1 }
+        }
+        return counts
     }
 
     // MARK: Overall
@@ -205,7 +269,8 @@ public struct AccuracyReport: Hashable, Sendable {
     /// One line per check, for a spreadsheet.
     public func csv() -> String {
         let formatter = ISO8601DateFormatter()
-        var lines = ["time,meter_mgdl,app_mgdl,librelink_mgdl,difference_mgdl,abs_rel_diff_pct,zone,sensor_day,rate_mgdl_per_min"]
+        var lines = ["time,meter_mgdl,app_mgdl,librelink_mgdl,difference_mgdl,abs_rel_diff_pct,zone,sensor_day,rate_mgdl_per_min,"
+                     + "fast_insulin_on_board_u,minutes_since_fast_insulin,minutes_since_food,minutes_since_exercise,steady_time"]
         for pair in pairs {
             lines.append([
                 formatter.string(from: pair.date),
@@ -217,6 +282,11 @@ public struct AccuracyReport: Hashable, Sendable {
                 pair.zone.rawValue,
                 pair.sensorDay.map(String.init) ?? "",
                 pair.ratePerMinute.map { String(format: "%.2f", $0) } ?? "",
+                String(format: "%.1f", pair.insulinOnBoard),
+                pair.minutesSinceInsulin.map { String(format: "%.0f", $0) } ?? "",
+                pair.minutesSinceFood.map { String(format: "%.0f", $0) } ?? "",
+                pair.minutesSinceExercise.map { String(format: "%.0f", $0) } ?? "",
+                String(pair.isSteadyTime),
             ].joined(separator: ","))
         }
         return lines.joined(separator: "\n") + "\n"
@@ -245,6 +315,19 @@ public struct AccuracyReport: Hashable, Sendable {
             index -= 1
         }
         return nil
+    }
+
+    /// The entries (sorted by date) from `start` through `end`.
+    static func logEntries(_ sorted: [LogEntry], from start: Date, through end: Date) -> [LogEntry] {
+        var low = 0
+        var high = sorted.count
+        while low < high {
+            let mid = (low + high) / 2
+            if sorted[mid].date < start { low = mid + 1 } else { high = mid }
+        }
+        var upper = low
+        while upper < sorted.count, sorted[upper].date <= end { upper += 1 }
+        return Array(sorted[low..<upper])
     }
 
     /// The 97.5th percentile of Student's t distribution, for a two-sided 95% range.

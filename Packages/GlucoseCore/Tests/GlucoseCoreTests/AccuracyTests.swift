@@ -99,7 +99,43 @@ final class AccuracyTests: XCTestCase {
         let csv = AccuracyReport(pairs: [pair(100, 110, libreLink: 104), pair(200, 190)]).csv()
         let lines = csv.split(separator: "\n")
         XCTAssertEqual(lines.count, 3)
-        XCTAssertTrue(lines[1].hasSuffix(",100,110,104,10,10.0,A,5,0.00"), String(lines[1]))
+        XCTAssertTrue(lines[1].hasSuffix(",100,110,104,10,10.0,A,5,0.00,0.0,,,,true"), String(lines[1]))
+    }
+
+    func testChecksAfterInsulinOrFoodAreLeftOutOfSteadyTimes() {
+        let readings = (0..<300).map { TestSupport.reading(100, minute: $0) }
+        let logbook = [
+            LogEntry(date: noon.addingTimeInterval(100 * 60), kind: .insulin(units: 4, type: .rapid)),
+            LogEntry(date: noon.addingTimeInterval(200 * 60), kind: .meal(carbsGrams: 50)),
+        ]
+        // Before anything; an hour after the insulin; after food with insulin still working; food only.
+        let sticks = [50, 160, 230, 299].map {
+            FingerstickEntry(date: noon.addingTimeInterval(Double($0) * 60), mgdL: 104, usedForCalibration: false)
+        }
+        let report = AccuracyReport(fingersticks: sticks, readings: readings, logbook: logbook)
+        XCTAssertEqual(report.pairs.count, 4)
+        XCTAssertEqual(report.pairs[1].insulinOnBoard, 4 * InsulinCurve.rapid.remaining(afterMinutes: 60), accuracy: 1e-9)
+        XCTAssertEqual(report.steadyTimes.pairs.map(\.date), [sticks[0].date])
+        XCTAssertEqual(report.disturbanceCounts[.insulin], 2)
+        XCTAssertEqual(report.disturbanceCounts[.food], 2)
+        XCTAssertNil(report.disturbanceCounts[.moving], "glucose was flat")
+        XCTAssertEqual(report.summary(.insulinActive)?.count, 2)
+        XCTAssertEqual(report.summary(.afterFood)?.count, 2)
+    }
+
+    func testAnyFastInsulinInTheTwoHoursBeforeIsNotASteadyTime() {
+        let small = AccuracyReport.Pair(date: noon, referenceMgdL: 100, sensorMgdL: 104, ratePerMinute: 0,
+                                        insulinOnBoard: 0.3, minutesSinceInsulin: 90)
+        XCTAssertEqual(small.disturbances, [.insulin], "the calibration guide's 2 hours, however small the dose")
+        let later = AccuracyReport.Pair(date: noon, referenceMgdL: 100, sensorMgdL: 104, ratePerMinute: 0,
+                                        insulinOnBoard: 0.3, minutesSinceInsulin: 150)
+        XCTAssertTrue(later.isSteadyTime)
+    }
+
+    func testChecksWithoutATrendAreNotSteadyTimes() {
+        XCTAssertFalse(pair(100, 104, rate: nil).isSteadyTime, "too few readings to know glucose was steady")
+        XCTAssertEqual(pair(100, 104, rate: nil).disturbances, [.unknownTrend])
+        XCTAssertTrue(pair(100, 104).isSteadyTime)
     }
 
     func testSticksOfferedForCalibrationAreNotChecks() {

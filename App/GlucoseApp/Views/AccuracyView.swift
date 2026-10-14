@@ -8,11 +8,14 @@ struct AccuracyView: View {
     @Environment(AppModel.self) private var model
     @State private var fullReport: AccuracyReport?
     @State private var allSensors = false
+    /// Only checks taken at steady times count, unless all are chosen.
+    @AppStorage(Self.steadyOnlyKey) private var steadyOnly = true
+    static let steadyOnlyKey = "accuracySteadyOnly"
 
     /// The paired sensor's serial; nil (all sensors) in the demo or with none paired.
     private var currentSerial: String? { model.isDemo ? nil : model.sensor.record?.serial }
 
-    /// The checks shown: the current sensor's, or every sensor's.
+    /// The checks of the chosen sensors: the current sensor's, or every sensor's.
     private var report: AccuracyReport? {
         fullReport.map { allSensors ? $0 : $0.forSensor(currentSerial) }
     }
@@ -33,17 +36,30 @@ struct AccuracyView: View {
                 }
             }
             if let report {
-                if let mard = report.mard {
-                    summary(report, mard: mard)
-                    misses(report)
-                    errorGrid(report)
-                    breakdown(report, overall: mard)
+                let shown = steadyOnly ? report.steadyTimes : report
+                if !report.pairs.isEmpty {
+                    filter(report)
+                }
+                if let mard = shown.mard {
+                    summary(shown, mard: mard)
+                    misses(shown)
+                    errorGrid(shown)
+                    breakdown(shown, overall: mard)
                     Section {
                         NavigationLink {
                             CalibrationGuideView()
                         } label: {
                             Label("What's a good MARD, and when to calibrate", systemImage: "book")
                         }
+                    }
+                } else if steadyOnly, !report.pairs.isEmpty {
+                    let count = report.pairs.count
+                    ContentUnavailableView {
+                        Label("No checks at steady times", systemImage: "drop")
+                    } description: {
+                        Text(count == 1
+                             ? "Your check was taken while fast insulin was working, after food or exercise, or while glucose moved. Choose All checks to see it."
+                             : "All \(count) checks were taken while fast insulin was working, after food or exercise, or while glucose moved. Choose All checks to see them.")
                     }
                 } else {
                     ContentUnavailableView {
@@ -74,12 +90,27 @@ struct AccuracyView: View {
                 }
             }
         }
-        .task(id: model.fingersticks.count) {
+        // Logged insulin and food decide which checks were at steady times, so they count too.
+        .task(id: [model.fingersticks.count, model.logbook.hashValue]) {
             fullReport = await model.fullAccuracyReport()
         }
     }
 
     // MARK: Sections
+
+    /// Steady times or all checks, and what steady times leave out.
+    @ViewBuilder
+    private func filter(_ report: AccuracyReport) -> some View {
+        Section {
+            Picker("Checks", selection: $steadyOnly) {
+                Text("Steady times").tag(true)
+                Text("All checks").tag(false)
+            }
+            .pickerStyle(.segmented)
+        } footer: {
+            Text(filterText(report))
+        }
+    }
 
     @ViewBuilder
     private func summary(_ report: AccuracyReport, mard: Double) -> some View {
@@ -208,8 +239,11 @@ struct AccuracyView: View {
     @ViewBuilder
     private func breakdown(_ report: AccuracyReport, overall: Double) -> some View {
         let u = model.unit
+        // At steady times only, nothing was moving, so those rows would be empty.
+        let groups: [AccuracyReport.Group] = steadyOnly ? [.belowRange, .inRange, .aboveRange, .firstDay, .laterDays]
+            : AccuracyReport.Group.allCases
         Section {
-            ForEach(AccuracyReport.Group.allCases, id: \.self) { group in
+            ForEach(groups, id: \.self) { group in
                 BreakdownRow(title: title(group, unit: u), subtitle: subtitle(group, unit: u),
                              summary: report.summary(group), overall: overall)
             }
@@ -221,6 +255,27 @@ struct AccuracyView: View {
     }
 
     // MARK: Text
+
+    private func filterText(_ report: AccuracyReport) -> String {
+        var text = "Steady times leave out checks taken within 2 hours of fast insulin or food (or with 0.5 U or more still "
+            + "working), within an hour of exercise, or while glucose moved \(model.unit.formatRate(mgdLPerMinute: 1)) or more. "
+            + "Then the sensor's 5–10 minute delay, not its accuracy, makes most of the difference."
+        let left = report.pairs.count - report.steadyTimes.pairs.count
+        guard left > 0 else { return text }
+        let counts = report.disturbanceCounts
+        let reasons = AccuracyReport.Disturbance.allCases.compactMap { disturbance -> String? in
+            guard let count = counts[disturbance], count > 0 else { return nil }
+            switch disturbance {
+            case .insulin: return "\(count) with fast insulin working"
+            case .food: return "\(count) after food"
+            case .exercise: return "\(count) after exercise"
+            case .moving: return "\(count) while glucose moved"
+            case .unknownTrend: return "\(count) without enough readings to see the trend"
+            }
+        }
+        text += " Left out: \(left) of \(report.pairs.count) (\(reasons.joined(separator: ", ")))."
+        return text
+    }
 
     private func summaryLine(_ report: AccuracyReport) -> String {
         var parts: [String] = []
@@ -252,6 +307,8 @@ struct AccuracyView: View {
         case .steady: return "Steady"
         case .moving: return "Moving"
         case .fast: return "Changing fast"
+        case .insulinActive: return "Fast insulin working"
+        case .afterFood: return "After food"
         }
     }
 
@@ -260,6 +317,8 @@ struct AccuracyView: View {
         case .steady: return "under \(u.formatRate(mgdLPerMinute: 1))"
         case .moving: return "\(u.formatRate(mgdLPerMinute: 1)) to \(u.formatRate(mgdLPerMinute: 2))"
         case .fast: return "over \(u.formatRate(mgdLPerMinute: 2))"
+        case .insulinActive: return "0.5 U or more still to act"
+        case .afterFood: return "within 2 hours"
         default: return nil
         }
     }
