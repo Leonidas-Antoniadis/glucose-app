@@ -207,15 +207,15 @@ struct AddLogEntryView: View {
     @State private var text = ""
     @State private var calibrate = false
     @State private var result: String?
-    @Environment(SensorConnection.self) private var sensor
     /// The entry or fingerstick being edited; nil when adding.
     private let editingEntry: LogEntry?
     private let editingStick: FingerstickEntry?
     /// An edited fingerstick was saved (it's replaced, so it can't be saved twice).
     @State private var editSaved = false
 
-    init(kind: QuickLogKind = .food) {
+    init(kind: QuickLogKind = .food, amount: String = "") {
         _kind = State(initialValue: kind)
+        _amountText = State(initialValue: amount)
         editingEntry = nil
         editingStick = nil
     }
@@ -252,13 +252,6 @@ struct AddLogEntryView: View {
 
     private var isEditing: Bool { editingEntry != nil || editingStick != nil }
 
-    /// Hours since the paired sensor started, at the fingerstick's time, during its first 12 hours.
-    private var earlySensorHours: Int? {
-        guard let record = sensor.record else { return nil }
-        let minutes = record.ageMinutes(at: date)
-        return (0..<12 * 60).contains(minutes) ? minutes / 60 : nil
-    }
-
     var body: some View {
         NavigationStack {
             Form {
@@ -283,12 +276,23 @@ struct AddLogEntryView: View {
                         LabeledContent(model.unit.symbol) {
                             TextField("0", text: $amountText).keyboardType(.decimalPad).multilineTextAlignment(.trailing)
                         }
+                    case .note:
+                        EmptyView()
+                    }
+                    DatePicker("Time", selection: $date, in: ...Date().addingTimeInterval(3600))
+                }
+                if kind != .bloodGlucose {
+                    Section {
+                        TextField(kind == .food ? "What did you eat?" : "Note", text: $text, axis: .vertical)
+                    }
+                } else {
+                    // Worked out again as the value or the time changes, and as readings arrive.
+                    Section("Calibration advice") {
+                        CalibrationAdviceView(advice: model.calibrationAdvice(meterMgdL: meterMgdL, at: date, replacing: editingStick),
+                                              calibrate: $calibrate)
                         Toggle("Use to calibrate the sensor", isOn: $calibrate)
-                        if calibrate, let hours = earlySensorHours {
-                            Text("This sensor is only \(hours) h old. Its signal often settles over the first 12–24 hours, so a calibration now can make later values wrong. Better: save this as a check (turn this off) and calibrate from tomorrow.")
-                                .font(.caption)
-                                .foregroundStyle(RangePalette.warningText)
-                        }
+                    }
+                    Section {
                         if !calibrate {
                             LabeledContent("LibreLink showed (\(model.unit.symbol))") {
                                 TextField("optional", text: $libreLinkText)
@@ -300,18 +304,7 @@ struct AddLogEntryView: View {
                                     .foregroundStyle(RangePalette.warningText)
                             }
                         }
-                    case .note:
-                        EmptyView()
-                    }
-                    DatePicker("Time", selection: $date, in: ...Date().addingTimeInterval(3600))
-                }
-                if kind != .bloodGlucose {
-                    Section {
-                        TextField(kind == .food ? "What did you eat?" : "Note", text: $text, axis: .vertical)
-                    }
-                } else {
-                    Section {
-                        Text("Calibrate only when glucose is steady (flat arrow), and after a sensor's first days only when a check is far off. Every blood glucose value also measures the sensor's accuracy, against what the app showed before it. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
+                        Text("Every blood glucose value also measures the sensor's accuracy, against what the app showed before it. Type what LibreLink shows at the same moment to compare the two apps under Sensor → Accuracy.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         NavigationLink {
@@ -338,6 +331,11 @@ struct AddLogEntryView: View {
 
     private var amount: Double? {
         Double(amountText.replacingOccurrences(of: ",", with: ".").trimmingCharacters(in: .whitespaces))
+    }
+
+    /// The blood glucose value typed, once it's a plausible meter value.
+    private var meterMgdL: Double? {
+        model.unit.parse(amountText).flatMap { (20...600).contains($0) ? $0 : nil }
     }
 
     /// Empty, or a value in range in the display unit.

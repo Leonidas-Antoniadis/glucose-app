@@ -49,7 +49,8 @@ enum ScreenshotMode {
     static let isActive = arguments.contains("-screenshots")
     static let showsOnboarding = arguments.contains("-onboarding")
 
-    /// `-screen NAME` opens a single screen (sensor, raw, packet, nfc, history, rule, add, battery, accuracy, guide, wear, bedtime).
+    /// `-screen NAME` opens a single screen (sensor, raw, packet, nfc, history, rule, add, battery, accuracy, guide, wear,
+    /// bedtime, fingerstick).
     static var screen: String? {
         guard isActive, let index = arguments.firstIndex(of: "-screen"), index + 1 < arguments.count else { return nil }
         return arguments[index + 1]
@@ -140,6 +141,13 @@ struct ScreenshotScreen: View {
                     .navigationBarTitleDisplayMode(.inline)
             case "add":
                 AddLogEntryView(kind: .fastInsulin)
+            case "fingerstick":
+                // A meter value a little above the sensor's, with the example correction dose still working.
+                if let latest = model.latest {
+                    AddLogEntryView(kind: .bloodGlucose, amount: model.unit.format(mgdL: latest.mgdL + 18))
+                } else {
+                    ProgressView()
+                }
             case "quick":
                 QuickDoseSheet(type: .rapid) { _, _ in }
             case "accuracy":

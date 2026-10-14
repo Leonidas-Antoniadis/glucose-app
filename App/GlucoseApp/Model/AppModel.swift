@@ -512,7 +512,7 @@ final class AppModel {
                 : AlertChartRenderer.render(readings: readings(lastHours: 2), unit: unit, threshold: rule?.thresholdMgdL))
     }
 
-    static let treatingNote = "Treating a low"
+    static let treatingNote = LogEntry.treatingLowText
 
     /// Snooze or Treating from a notification or the Live Activity. Treating also logs it, so
     /// the logbook shows when the low was treated.
@@ -946,10 +946,48 @@ final class AppModel {
         if calibrationChanged { recalibrateRecent() }
     }
 
+    /// Whether to calibrate with a fingerstick of `meterMgdL` taken at `date`, and why, by the
+    /// calibration guide's rules: the trend then, fast insulin and food in the 2 hours before,
+    /// exercise, the sensor's age, how far it is from the meter and the calibrations so far.
+    /// Without a value (nil) it only says whether it's a good moment. A fingerstick being edited
+    /// (`replacing`) is left out, as saving the edit removes it first.
+    func calibrationAdvice(meterMgdL: Double?, at date: Date, replacing old: FingerstickEntry? = nil) -> CalibrationAdvice {
+        var input = CalibrationAdviceInput(date: date, meterMgdL: meterMgdL)
+        input.isDemo = isDemo
+        input.logbook = logbook
+        input.fingersticks = fingersticks.filter { $0.id != old?.id }
+        input.readings = readings(in: DateInterval(start: date.addingTimeInterval(-45 * 60), duration: 50 * 60))
+        input.latest = latest
+        // Kept with an edit at the same time: removing the old calibration rewrites the readings around it.
+        if let old, old.date == date { input.shownMgdL = old.appMgdL }
+        if isDemo, let context = wearContext {
+            // Nothing is calibrated in the demo: it only shows what the advice looks at.
+            input.sensor = CalibrationSensor(serial: context.serial, activatedAt: context.activatedAt,
+                                             warmUpEndsAt: context.activatedAt.addingTimeInterval(3600),
+                                             lifetimeDays: context.lifetimeDays, calibration: Calibration(pointCount: 1))
+        } else if !isDemo, let record = sensor.record {
+            var points = record.calibrationPoints
+            var calibration = record.calibration
+            if let id = old?.calibrationPointID, points.contains(where: { $0.id == id }) {
+                points.removeAll { $0.id == id }
+                let firstDayEnds = record.activatedAt.addingTimeInterval(Calibration.firstDayHours * 3600)
+                calibration = points.map(\.date).max().map { Calibration.fit(points, now: $0, firstDayEnds: firstDayEnds) }
+                    ?? .uncalibrated
+            }
+            input.sensor = CalibrationSensor(serial: record.serial, activatedAt: record.activatedAt,
+                                             warmUpEndsAt: record.warmUpEndsAt,
+                                             lifetimeDays: Int((Double(record.maxLifeMinutes) / 1440).rounded(.up)),
+                                             calibration: calibration, calibrationPoints: points,
+                                             unconfirmedPoint: record.unconfirmedPoint)
+        }
+        return CalibrationAdvisor.advise(input, unit: unit) { $0.formatted(date: .omitted, time: .shortened) }
+    }
+
     /// Empty in the demo: comparing real fingersticks with a made-up curve would show a
     /// meaningless MARD.
     var accuracy: AccuracyReport {
-        isDemo && !ScreenshotMode.isActive ? AccuracyReport(pairs: []) : AccuracyReport(fingersticks: fingersticks, readings: readings)
+        isDemo && !ScreenshotMode.isActive ? AccuracyReport(pairs: [])
+            : AccuracyReport(fingersticks: fingersticks, readings: readings, logbook: logbook)
     }
 
     /// The accuracy report over every fingerstick on file (91 days), not just the 14 days of
@@ -958,6 +996,7 @@ final class AppModel {
         guard !isDemo || ScreenshotMode.isActive else { return AccuracyReport(pairs: []) }
         let sticks = fingersticks.filter(AccuracyReport.isScored)
         let inMemory = readings
+        let logbook = self.logbook
         guard let oldest = sticks.map(\.date).min() else { return AccuracyReport(pairs: []) }
         let archive = stores.archive
         let needsArchive = oldest < (inMemory.first?.timestamp ?? .distantFuture)
@@ -968,7 +1007,7 @@ final class AppModel {
                 let older = (try? archive.load(from: oldest.addingTimeInterval(-20 * 60), to: first)) ?? []
                 all = older.filter { $0.timestamp < first } + inMemory
             }
-            return AccuracyReport(fingersticks: sticks, readings: all)
+            return AccuracyReport(fingersticks: sticks, readings: all, logbook: logbook)
         }.value
     }
 
@@ -1005,6 +1044,7 @@ final class AppModel {
     func wearDays() async -> [SensorWearDay] {
         guard let context = wearContext else { return [] }
         let inMemory = readings
+        let logbook = self.logbook
         let sticks = fingersticks.filter { $0.date >= context.activatedAt }
         // Accuracy per day comes from this sensor's checks only, so nothing older than the sensor
         // is loaded (not the whole 91-day archive).
@@ -1018,7 +1058,7 @@ final class AppModel {
                 let older = (try? archive.load(from: context.activatedAt, to: first)) ?? []
                 all = older.filter { $0.timestamp < first } + inMemory
             }
-            let accuracy = scoresChecks ? AccuracyReport(fingersticks: sticks, readings: all) : AccuracyReport(pairs: [])
+            let accuracy = scoresChecks ? AccuracyReport(fingersticks: sticks, readings: all, logbook: logbook) : AccuracyReport(pairs: [])
             return SensorWear.days(readings: all, sensorSerial: context.serial, activatedAt: context.activatedAt,
                                    lifetimeDays: context.lifetimeDays, fingersticks: sticks, accuracy: accuracy,
                                    now: max(Date(), inMemory.last?.timestamp ?? Date()), firstMinute: context.firstMinute)

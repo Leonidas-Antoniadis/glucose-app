@@ -129,7 +129,7 @@ struct StatusBanners: View {
                 }
                 if let record = sensor.record {
                     if !record.calibration.isCalibrated {
-                        ActionBanner(systemImage: "drop", text: "Values are uncalibrated estimates. Add a fingerstick to calibrate.",
+                        ActionBanner(systemImage: "drop", text: uncalibratedText,
                                      actions: [("Add fingerstick", { addingFingerstick = true })])
                     } else if let last = model.fingersticks.map(\.date).max() ?? record.calibration.lastCalibration,
                               now.timeIntervalSince(last) > 24 * 3600 {
@@ -146,6 +146,17 @@ struct StatusBanners: View {
                 ActionBanner(systemImage: "xmark.octagon", text: error, color: .red,
                              actions: [("Dismiss", { model.lastError = nil })])
             }
+        }
+    }
+
+    /// The uncalibrated banner, with whether now is the moment for the first calibration (the
+    /// calibration advice for this moment: not in the sensor's first 12–24 hours, glucose steady).
+    private var uncalibratedText: String {
+        let advice = model.calibrationAdvice(meterMgdL: nil, at: now)
+        switch advice.verdict {
+        case .calibrate: return "Values are uncalibrated estimates. Now is a good time for a fingerstick to calibrate."
+        case .wait: return "Values are uncalibrated estimates. " + advice.summary
+        case .notNeeded, .checkAgain, .testAgain, .cannot: return "Values are uncalibrated estimates. Add a fingerstick to calibrate."
         }
     }
 
