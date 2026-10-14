@@ -23,6 +23,9 @@ public struct LogEntry: Codable, Hashable, Identifiable, Sendable {
         }
     }
 
+    /// The text of the food entry Treating logs from an alert.
+    public static let treatingLowText = "Treating a low"
+
     public var id: UUID
     public var date: Date
     public var kind: Kind

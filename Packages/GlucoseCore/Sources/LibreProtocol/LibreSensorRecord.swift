@@ -24,10 +24,6 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
     public var pairedAt: Date
 
     public static let warmUpMinutes = 60
-    /// A fingerstick this far from the sensor's value (both in mg/dL and as a fraction) is more
-    /// often a test error, such as sugar on the finger, than a sensor error.
-    public static let outlierMgdL: Double = 40
-    public static let outlierFraction: Double = 0.4
 
     public init(uid: [UInt8], patchInfo: [UInt8], ageMinutes: Int, maxLifeMinutes: Int, now: Date) {
         self.uid = uid
@@ -98,12 +94,9 @@ public struct LibreSensorRecord: Codable, Hashable, Sendable {
             return .tooOld
         }
         let expected = calibration.mgdL(fromRaw: raw)
-        let offset = referenceMgdL - expected
-        if abs(offset) > Self.outlierMgdL, abs(offset) > Self.outlierFraction * max(expected, 1) {
-            let confirmed = unconfirmedPoint.map { pending in
-                let pendingOffset = pending.referenceMgdL - calibration.mgdL(fromRaw: pending.raw)
-                return abs(date.timeIntervalSince(pending.date)) <= 30 * 60
-                    && abs(pendingOffset - offset) <= max(15, 0.15 * referenceMgdL)
+        if Calibration.isOutlier(referenceMgdL: referenceMgdL, sensorMgdL: expected) {
+            let confirmed = unconfirmedPoint.map {
+                calibration.confirms($0, referenceMgdL: referenceMgdL, raw: raw, date: date)
             } ?? false
             guard confirmed else {
                 unconfirmedPoint = CalibrationPoint(date: date, referenceMgdL: referenceMgdL, raw: raw)

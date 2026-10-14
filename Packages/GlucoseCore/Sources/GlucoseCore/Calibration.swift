@@ -35,6 +35,10 @@ public struct Calibration: Codable, Hashable, Sendable {
     public static let firstDayHours: Double = 24
     /// Two points need at least this spread in reference values for a slope fit.
     public static let minimumSpreadMgdL: Double = 40
+    /// A fingerstick this far from the sensor's value (both in mg/dL and as a fraction) is more
+    /// often a test error, such as sugar on the finger, than a sensor error.
+    public static let outlierMgdL: Double = 40
+    public static let outlierFraction: Double = 0.4
 
     public var slope: Double
     public var intercept: Double
@@ -60,6 +64,21 @@ public struct Calibration: Codable, Hashable, Sendable {
     public func needsCalibration(now: Date) -> Bool {
         guard let last = lastCalibration else { return true }
         return now.timeIntervalSince(last) > 24 * 3600
+    }
+
+    /// Whether a fingerstick is so far from the sensor's value that it waits for a second one.
+    public static func isOutlier(referenceMgdL: Double, sensorMgdL: Double) -> Bool {
+        let offset = referenceMgdL - sensorMgdL
+        return abs(offset) > outlierMgdL && abs(offset) > outlierFraction * max(sensorMgdL, 1)
+    }
+
+    /// Whether a far-off fingerstick confirms the one waiting: within 30 minutes of it, and off
+    /// from the sensor by about as much (15 mg/dL or 15 %).
+    public func confirms(_ pending: CalibrationPoint, referenceMgdL: Double, raw: Double, date: Date) -> Bool {
+        let offset = referenceMgdL - mgdL(fromRaw: raw)
+        let pendingOffset = pending.referenceMgdL - mgdL(fromRaw: pending.raw)
+        return abs(date.timeIntervalSince(pending.date)) <= 30 * 60
+            && abs(pendingOffset - offset) <= max(15, 0.15 * referenceMgdL)
     }
 
     /// Weighted least-squares fit over recent points, with sane limits on slope and intercept.
