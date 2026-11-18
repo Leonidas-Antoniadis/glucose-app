@@ -558,6 +558,8 @@ final class AppModel {
             // One alarm per reading, the first event first (threshold rules come before trend
             // alerts): a second alarm would cut off the first, usually more severe, one.
             var alarmStarted = false
+            // Extra buzzes only for the first (most severe) alert, so they don't double up.
+            var repeatsSent = false
             for event in events {
                 var alarmHeard = false
                 if !alarmStarted, playAlarmIfNeeded(event) {
@@ -566,7 +568,10 @@ final class AppModel {
                     // The notification only goes quiet if the app's alarm is clearly audible.
                     alarmHeard = AlarmPlayer.isClearlyAudible
                 }
-                notifications.deliver(event, unit: unit, alarmPlaying: alarmHeard, details: alertDetails(for: event))
+                let repeats = repeatsSent ? nil : extraBuzzes(for: event)
+                if repeats != nil { repeatsSent = true }
+                notifications.deliver(event, unit: unit, alarmPlaying: alarmHeard, details: alertDetails(for: event),
+                                      repeats: repeats)
                 if settings.speakValues, isActive, !alarmStarted {
                     voice.announce(event, unit: unit)
                 }
@@ -626,8 +631,24 @@ final class AppModel {
     /// Keeps the phone buzzing after an alert (Alerts → Vibration). A rule set to Silent stays a
     /// quiet alert unless it is Critical.
     private func vibrateIfNeeded(_ events: [AlertEvent]) {
-        guard events.contains(where: { $0.sound != .silent || $0.isCritical }) else { return }
+        guard events.contains(where: buzzesMore) else { return }
         vibrator.start(seconds: settings.alertVibrationSeconds)
+    }
+
+    private func buzzesMore(_ event: AlertEvent) -> Bool {
+        event.sound != .silent || event.isCritical
+    }
+
+    /// The copies of an alert to send after it (Alerts → Vibration → Extra buzzes), if any.
+    private func extraBuzzes(for event: AlertEvent) -> (count: Int, interval: Int)? {
+        guard settings.alertExtraBuzzes > 0, buzzesMore(event) else { return nil }
+        return (settings.alertExtraBuzzes, settings.alertBuzzIntervalSeconds)
+    }
+
+    /// Stops the extra buzzing: the app's vibration and the alert's remaining copies.
+    private func stopBuzzing() {
+        vibrator.stop()
+        notifications.cancelRepeats()
     }
 
     /// Sends a rule's alert right away, exactly as it would sound, without logging it.
@@ -659,12 +680,13 @@ final class AppModel {
     private func sendTest(_ event: AlertEvent) {
         let alarmPlaying = playAlarmIfNeeded(event, seconds: 8)
         vibrateIfNeeded([event])
-        notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying && AlarmPlayer.isClearlyAudible, isTest: true)
+        notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying && AlarmPlayer.isClearlyAudible, isTest: true,
+                              repeats: extraBuzzes(for: event))
     }
 
     func stopAlarm() {
         alarm.stop()
-        vibrator.stop()
+        stopBuzzing()
     }
 
     func refreshNotificationStatus() async {
@@ -682,7 +704,7 @@ final class AppModel {
         if demoAhead { catchUpDemo() }
         engine.acknowledge(ruleID: ruleID, at: Date(), eventDate: eventDate)
         alarm.stop()
-        vibrator.stop()
+        stopBuzzing()
         saveAlertState(force: true)
         if demoAhead { scheduleDemoAlertsAhead() }
         // The Live Activity drops its Snooze button.
@@ -1121,7 +1143,7 @@ final class AppModel {
             if wasInactive {
                 // Opening the app (or tapping the notification) means the alarm was heard.
                 alarm.stop()
-                vibrator.stop()
+                stopBuzzing()
                 catchUpDemo()
             }
             if wasInactive, settings.biometricLock, isLocked {

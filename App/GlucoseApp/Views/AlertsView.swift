@@ -71,6 +71,18 @@ struct AlertsView: View {
                 }
 
                 Section {
+                    Picker("Extra buzzes", selection: $model.settings.alertExtraBuzzes) {
+                        ForEach([0, 2, 3, 5], id: \.self) { count in
+                            Text(count == 0 ? "Off" : "\(count)").tag(count)
+                        }
+                    }
+                    if model.settings.alertExtraBuzzes > 0 {
+                        Picker("Time between them", selection: $model.settings.alertBuzzIntervalSeconds) {
+                            ForEach([3, 5, 10], id: \.self) { seconds in
+                                Text("\(seconds) seconds").tag(seconds)
+                            }
+                        }
+                    }
                     Picker("Keep vibrating", selection: $model.settings.alertVibrationSeconds) {
                         ForEach(AlertVibrator.allowedSeconds, id: \.self) { seconds in
                             Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
@@ -79,7 +91,7 @@ struct AlertsView: View {
                 } header: {
                     Text("Vibration")
                 } footer: {
-                    Text("In Silent mode iOS buzzes once for an alert. This keeps the phone buzzing for low, high and trend alerts until the time is up, you snooze or you open the app. iOS only vibrates if Settings → Sounds & Haptics allows haptics in Silent mode.")
+                    Text("In Silent mode iOS buzzes once for an alert. Extra buzzes sends the alert again, each copy one more buzz; with the ringer on, each copy also replays its sound. Keep vibrating has the app buzz about once a second, while it's running. Both are for low, high and trend alerts, and stop when you snooze or open the app. iOS only vibrates if Settings → Sounds & Haptics allows haptics in Silent mode.")
                 }
 
                 Section {

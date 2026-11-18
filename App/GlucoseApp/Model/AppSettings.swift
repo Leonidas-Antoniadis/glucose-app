@@ -58,6 +58,10 @@ struct AppSettings: Codable, Hashable {
     var hideValuesOnLockScreen = false
     /// Seconds the phone keeps vibrating after a glucose alert (0: only the notification's own buzz).
     var alertVibrationSeconds = 0
+    /// Copies of a glucose alert sent after it, each one more iOS buzz (0: off).
+    var alertExtraBuzzes = 0
+    /// Seconds between those copies.
+    var alertBuzzIntervalSeconds = 5
 
     init() {}
 
@@ -65,6 +69,7 @@ struct AppSettings: Codable, Hashable {
         case unit, ruleSet, missingData, dataSource, demoSpeed, onboardingDone, biometricLock
         case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData, runInBackground
         case bedtimeCheck, bedtimeMinutes, hideValuesOnLockScreen, alertVibrationSeconds
+        case alertExtraBuzzes, alertBuzzIntervalSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -88,5 +93,7 @@ struct AppSettings: Codable, Hashable {
         bedtimeMinutes = try c.decodeIfPresent(Int.self, forKey: .bedtimeMinutes) ?? d.bedtimeMinutes
         hideValuesOnLockScreen = try c.decodeIfPresent(Bool.self, forKey: .hideValuesOnLockScreen) ?? d.hideValuesOnLockScreen
         alertVibrationSeconds = try c.decodeIfPresent(Int.self, forKey: .alertVibrationSeconds) ?? d.alertVibrationSeconds
+        alertExtraBuzzes = try c.decodeIfPresent(Int.self, forKey: .alertExtraBuzzes) ?? d.alertExtraBuzzes
+        alertBuzzIntervalSeconds = try c.decodeIfPresent(Int.self, forKey: .alertBuzzIntervalSeconds) ?? d.alertBuzzIntervalSeconds
     }
 }

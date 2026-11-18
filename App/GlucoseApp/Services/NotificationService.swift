@@ -17,6 +17,9 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     private static let sensorPrefix = "sensor-reminder-"
     private static let signaturePrefix = "signature-"
     private static let demoPrefix = "demo-alert-"
+    private static let repeatPrefix = "alert-repeat-"
+    /// The follow-ups of the newest alert, so a newer alert or a snooze can cancel them.
+    private var repeatIDs: [String] = []
     /// iOS keeps at most 64 pending notifications; leave room for the others.
     static let maxDemoAlerts = 30
 
@@ -83,12 +86,26 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     /// notification stays quiet.
     /// `isTest`: a test alert gets no Snooze or Treating, so tapping them can't snooze the real
     /// rule or log a treatment.
+    /// `repeats`: copies of the alert sent `interval` seconds apart. In Silent mode iOS buzzes once
+    /// per notification, so each copy is one more buzz. They're scheduled with iOS, so they come
+    /// even if the app is suspended right after.
     func deliver(_ event: AlertEvent, unit: GlucoseUnit, alarmPlaying: Bool = false, details: AlertDetails? = nil,
-                 isTest: Bool = false) {
+                 isTest: Bool = false, repeats: (count: Int, interval: Int)? = nil) {
         let content = content(for: event, unit: unit, alarmPlaying: alarmPlaying)
         if isTest {
             content.categoryIdentifier = ""
             content.userInfo = [:]
+        }
+        if let repeats, repeats.count > 0 {
+            // A copy always has a sound: iOS only vibrates for a notification that has one.
+            let copy = self.content(for: event, unit: unit, alarmPlaying: false)
+            copy.categoryIdentifier = content.categoryIdentifier
+            copy.userInfo = content.userInfo
+            if let details {
+                copy.title = details.title
+                copy.body = details.body
+            }
+            scheduleRepeats(of: copy, count: repeats.count, interval: repeats.interval)
         }
         var chartFile: URL?
         if let details {
@@ -107,6 +124,30 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)) { error in
             // iOS takes the chart file only when the notification is added.
             if error != nil, let attached { try? FileManager.default.removeItem(at: attached) }
+        }
+    }
+
+    private func scheduleRepeats(of content: UNNotificationContent, count: Int, interval: Int) {
+        cancelRepeats()
+        let base = Self.repeatPrefix + UUID().uuidString
+        for index in 1...count {
+            let id = "\(base)-\(index)"
+            repeatIDs.append(id)
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: Double(index * max(1, interval)), repeats: false)
+            center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        }
+    }
+
+    /// Stops an alert's remaining extra buzzes and clears the copies already shown (the first alert stays).
+    func cancelRepeats() {
+        center.removePendingNotificationRequests(withIdentifiers: repeatIDs)
+        center.removeDeliveredNotifications(withIdentifiers: repeatIDs)
+        repeatIDs = []
+        // Copies left from before the app was relaunched.
+        let prefix = Self.repeatPrefix
+        center.getDeliveredNotifications { [center] delivered in
+            let old = delivered.map(\.request.identifier).filter { $0.hasPrefix(prefix) }
+            if !old.isEmpty { center.removeDeliveredNotifications(withIdentifiers: old) }
         }
     }
 
