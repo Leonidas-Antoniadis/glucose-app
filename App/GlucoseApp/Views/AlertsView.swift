@@ -71,6 +71,18 @@ struct AlertsView: View {
                 }
 
                 Section {
+                    Picker("Keep vibrating", selection: $model.settings.alertVibrationSeconds) {
+                        ForEach(AlertVibrator.allowedSeconds, id: \.self) { seconds in
+                            Text(seconds == 0 ? "Off" : "\(seconds) seconds").tag(seconds)
+                        }
+                    }
+                } header: {
+                    Text("Vibration")
+                } footer: {
+                    Text("In Silent mode iOS buzzes once for an alert. This keeps the phone buzzing for low, high and trend alerts until the time is up, you snooze or you open the app. iOS only vibrates if Settings → Sounds & Haptics allows haptics in Silent mode.")
+                }
+
+                Section {
                     Toggle("Alert when no data", isOn: $model.settings.missingData.isEnabled)
                     Stepper(value: $model.settings.missingData.minutes, in: MissingDataAlert.allowedMinutes, step: 5) {
                         Text("After \(model.settings.missingData.minutes) min without readings")

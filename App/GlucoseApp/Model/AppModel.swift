@@ -40,6 +40,7 @@ final class AppModel {
     @ObservationIgnored let notifications = NotificationService()
     @ObservationIgnored private let voice = VoiceAnnouncer()
     @ObservationIgnored private let alarm = AlarmPlayer()
+    @ObservationIgnored private let vibrator = AlertVibrator()
     @ObservationIgnored let surfaces = SurfaceUpdater()
     @ObservationIgnored private var demoTask: Task<Void, Never>?
     @ObservationIgnored private var demoMinute = 0
@@ -570,6 +571,7 @@ final class AppModel {
                     voice.announce(event, unit: unit)
                 }
             }
+            vibrateIfNeeded(events)
         }
         recentEvents.insert(contentsOf: events.reversed(), at: 0)
         if recentEvents.count > 50 {
@@ -621,6 +623,13 @@ final class AppModel {
         return style != fallback && alarm.play(fallback, seconds: seconds)
     }
 
+    /// Keeps the phone buzzing after an alert (Alerts → Vibration). A rule set to Silent stays a
+    /// quiet alert unless it is Critical.
+    private func vibrateIfNeeded(_ events: [AlertEvent]) {
+        guard events.contains(where: { $0.sound != .silent || $0.isCritical }) else { return }
+        vibrator.start(seconds: settings.alertVibrationSeconds)
+    }
+
     /// Sends a rule's alert right away, exactly as it would sound, without logging it.
     func sendTestAlert(for rule: AlertRule) {
         let event = AlertEvent(ruleID: rule.id, ruleName: "Test: \(rule.name)", direction: rule.direction,
@@ -649,11 +658,13 @@ final class AppModel {
     /// Test alerts play the alarm for 8 seconds; real ones for 30.
     private func sendTest(_ event: AlertEvent) {
         let alarmPlaying = playAlarmIfNeeded(event, seconds: 8)
+        vibrateIfNeeded([event])
         notifications.deliver(event, unit: unit, alarmPlaying: alarmPlaying && AlarmPlayer.isClearlyAudible, isTest: true)
     }
 
     func stopAlarm() {
         alarm.stop()
+        vibrator.stop()
     }
 
     func refreshNotificationStatus() async {
@@ -671,6 +682,7 @@ final class AppModel {
         if demoAhead { catchUpDemo() }
         engine.acknowledge(ruleID: ruleID, at: Date(), eventDate: eventDate)
         alarm.stop()
+        vibrator.stop()
         saveAlertState(force: true)
         if demoAhead { scheduleDemoAlertsAhead() }
         // The Live Activity drops its Snooze button.
@@ -1109,6 +1121,7 @@ final class AppModel {
             if wasInactive {
                 // Opening the app (or tapping the notification) means the alarm was heard.
                 alarm.stop()
+                vibrator.stop()
                 catchUpDemo()
             }
             if wasInactive, settings.biometricLock, isLocked {

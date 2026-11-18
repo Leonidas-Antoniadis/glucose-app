@@ -56,13 +56,15 @@ struct AppSettings: Codable, Hashable {
     /// Keep glucose values off the Lock Screen: notifications, the Live Activity and Lock Screen
     /// widgets say only that there is an alert.
     var hideValuesOnLockScreen = false
+    /// Seconds the phone keeps vibrating after a glucose alert (0: only the notification's own buzz).
+    var alertVibrationSeconds = 0
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case unit, ruleSet, missingData, dataSource, demoSpeed, onboardingDone, biometricLock
         case speakValues, liveActivity, batteryAlert, bluetoothAlert, allowUnverifiedSensorTypes, recordAllRawData, runInBackground
-        case bedtimeCheck, bedtimeMinutes, hideValuesOnLockScreen
+        case bedtimeCheck, bedtimeMinutes, hideValuesOnLockScreen, alertVibrationSeconds
     }
 
     init(from decoder: Decoder) throws {
@@ -85,5 +87,6 @@ struct AppSettings: Codable, Hashable {
         bedtimeCheck = try c.decodeIfPresent(Bool.self, forKey: .bedtimeCheck) ?? d.bedtimeCheck
         bedtimeMinutes = try c.decodeIfPresent(Int.self, forKey: .bedtimeMinutes) ?? d.bedtimeMinutes
         hideValuesOnLockScreen = try c.decodeIfPresent(Bool.self, forKey: .hideValuesOnLockScreen) ?? d.hideValuesOnLockScreen
+        alertVibrationSeconds = try c.decodeIfPresent(Int.self, forKey: .alertVibrationSeconds) ?? d.alertVibrationSeconds
     }
 }
